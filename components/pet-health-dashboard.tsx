@@ -453,7 +453,7 @@ export function PetHealthDashboard() {
       setUser(session?.user ?? null);
       setSyncStatus(session?.user ? "loading-cloud" : "signed-out");
       if (!session?.user) {
-        setAuthMessage("Signed out. This browser keeps data locally unless you use sign out + clear.");
+        setAuthMessage("Signed out. Sign in again to view your pet household.");
       }
     });
 
@@ -596,8 +596,8 @@ export function PetHealthDashboard() {
     setActiveView("overview");
   };
 
-  const sendMagicLink = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const sendMagicLink = async (event?: React.FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     if (!supabase || !authEmail.trim()) return;
 
     const email = authEmail.trim().toLowerCase();
@@ -706,7 +706,7 @@ export function PetHealthDashboard() {
     loadedStoredLocalCopy.current = false;
     setAppData(seedAppData);
     setSyncStatus("signed-out");
-    setAuthMessage(clearError ?? "Signed out and cleared this browser copy. Sample data is showing again.");
+    setAuthMessage(clearError ?? "Signed out and cleared this browser copy.");
   };
 
   const syncNow = async () => {
@@ -743,11 +743,27 @@ export function PetHealthDashboard() {
     setUser(null);
     setAppData(seedAppData);
     setSyncStatus("signed-out");
-    setAuthMessage(clearError ?? "Deleted synced data and cleared this browser copy. Sample data is showing again.");
+    setAuthMessage(clearError ?? "Deleted synced data and cleared this browser copy.");
   };
 
   const metrics = useMemo(() => buildMetrics(data), [data]);
   const ActiveIcon = viewMeta[activeView].icon;
+
+  if (isSupabaseConfigured && !user) {
+    return (
+      <AuthLanding
+        email={authEmail}
+        password={authPassword}
+        syncStatus={syncStatus}
+        message={authMessage}
+        onEmailChange={setAuthEmail}
+        onPasswordChange={setAuthPassword}
+        onSendMagicLink={sendMagicLink}
+        onSignInWithPassword={signInWithPassword}
+        onCreatePasswordAccount={createPasswordAccount}
+      />
+    );
+  }
 
   return (
     <div className="print-root min-h-screen px-4 py-4 sm:px-6 lg:px-8">
@@ -969,6 +985,183 @@ function SyncPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function AuthLanding({
+  email,
+  password,
+  syncStatus,
+  message,
+  onEmailChange,
+  onPasswordChange,
+  onSendMagicLink,
+  onSignInWithPassword,
+  onCreatePasswordAccount
+}: {
+  email: string;
+  password: string;
+  syncStatus: SyncStatus;
+  message: string;
+  onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onSendMagicLink: (event?: React.FormEvent<HTMLFormElement>) => void;
+  onSignInWithPassword: () => void;
+  onCreatePasswordAccount: () => void;
+}) {
+  const isBusy = syncStatus === "checking" || syncStatus === "loading-cloud";
+  const benefits = [
+    { icon: NotebookTabs, title: "Vet-ready memory", text: "Keep symptoms, visits, tests, meds, diet changes, behavior notes, and documents in one timeline." },
+    { icon: Pill, title: "Care plan tracking", text: "Follow medications, reminders, physio routines, prevention items, and follow-ups without relying on memory." },
+    { icon: AlertTriangle, title: "Emergency summary", text: "Quickly pull together allergies, conditions, active meds, vet contacts, and recent changes." },
+    { icon: LineChart, title: "Pattern awareness", text: "Notice weight, symptoms, routine completion, and cost trends over time." }
+  ];
+
+  return (
+    <div className="min-h-screen bg-ivory px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-7xl items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="py-6">
+          <div className="mb-8 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-pine text-white shadow-soft">
+              <PawPrint className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-normal text-muted">
+                A health memory and longevity tracker for serious pet parents.
+              </p>
+              <p className="text-lg font-semibold text-ink">Pet Health Memory</p>
+            </div>
+          </div>
+
+          <p className="mb-3 inline-flex rounded-lg border border-pine/15 bg-mist px-3 py-1 text-xs font-semibold uppercase tracking-normal text-pine">
+            Private beta
+          </p>
+          <h1 className="max-w-3xl text-4xl font-semibold leading-tight tracking-normal text-ink sm:text-5xl">
+            Remember the details when your pet needs you calm.
+          </h1>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-muted sm:text-lg">
+            A practical health timeline, care tracker, and vet-summary tool for senior pets, chronically managed pets,
+            and families juggling medications, physio, recurring appointments, and expensive care.
+          </p>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            {benefits.map((benefit) => {
+              const Icon = benefit.icon;
+              return (
+                <article key={benefit.title} className="rounded-lg border border-ink/10 bg-white/80 p-4 shadow-soft">
+                  <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-mist text-pine">
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </div>
+                  <h2 className="text-sm font-semibold text-ink">{benefit.title}</h2>
+                  <p className="mt-2 text-sm leading-6 text-muted">{benefit.text}</p>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-2 text-xs font-semibold text-muted">
+            <span className="rounded-lg border border-ink/10 bg-white px-3 py-2">Not medical advice</span>
+            <span className="rounded-lg border border-ink/10 bg-white px-3 py-2">Built for care conversations</span>
+            <span className="rounded-lg border border-ink/10 bg-white px-3 py-2">Works on phone and desktop</span>
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-soft sm:p-6">
+          <div className="mb-5 flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-mist text-pine">
+              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-semibold tracking-normal text-ink">Sign in to your pet household</h2>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                Your dashboard, pet records, and synced household data are available after login.
+              </p>
+            </div>
+          </div>
+
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSignInWithPassword();
+            }}
+            className="space-y-3"
+          >
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Email</span>
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => onEmailChange(event.target.value)}
+                placeholder="you@example.com"
+                className="input mt-2 w-full"
+                autoComplete="email"
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">Password</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => onPasswordChange(event.target.value)}
+                placeholder="Beta password"
+                className="input mt-2 w-full"
+                autoComplete="current-password"
+                minLength={8}
+              />
+            </label>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="submit"
+                disabled={isBusy}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-pine bg-pine px-4 py-2 text-sm font-semibold text-white shadow-soft transition hover:bg-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <LogOut className="h-4 w-4 rotate-180" aria-hidden="true" />
+                Sign in
+              </button>
+              <button
+                type="button"
+                onClick={onCreatePasswordAccount}
+                disabled={isBusy}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <UserPlus className="h-4 w-4" aria-hidden="true" />
+                Create account
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onSendMagicLink()}
+              disabled={isBusy}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Mail className="h-4 w-4" aria-hidden="true" />
+              Email me a sign-in link
+            </button>
+          </form>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${syncStatusTone(syncStatus)}`}>
+              {syncStatusLabel(syncStatus)}
+            </span>
+            {message && <p className="text-sm font-medium text-muted">{message}</p>}
+          </div>
+
+          <div className="mt-6 rounded-lg border border-ink/10 bg-ivory p-4">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <CheckCircle2 className="h-4 w-4 text-pine" aria-hidden="true" />
+              For testing
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Use the email invited for this beta. If magic links are rate-limited, sign in with the beta password created
+              for your tester account.
+            </p>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
 
