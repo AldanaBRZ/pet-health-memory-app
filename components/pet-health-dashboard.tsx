@@ -6,6 +6,7 @@ import {
   BadgeDollarSign,
   Bell,
   CalendarClock,
+  ChevronDown,
   CheckCircle2,
   ClipboardList,
   Cloud,
@@ -19,6 +20,7 @@ import {
   LineChart,
   LogOut,
   Mail,
+  Menu,
   MessageSquareText,
   NotebookTabs,
   PawPrint,
@@ -128,6 +130,17 @@ const eventTone: Record<EventType, string> = {
   diet: "border-skywash bg-skywash/70 text-ink",
   procedure: "border-ink/10 bg-white text-ink",
   test: "border-clinical/20 bg-white text-clinical"
+};
+
+const eventAccent: Record<EventType, string> = {
+  symptom: "border-l-coral",
+  vet: "border-l-clinical",
+  medication: "border-l-lilac",
+  physio: "border-l-sage",
+  behavior: "border-l-amber",
+  diet: "border-l-skywash",
+  procedure: "border-l-ink/30",
+  test: "border-l-clinical"
 };
 
 const categories: ExpenseCategory[] = [
@@ -769,7 +782,7 @@ export function PetHealthDashboard() {
     <div className="print-root min-h-screen px-4 py-4 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <header className="no-print border-b border-ink/10 pb-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-pine text-white shadow-soft">
                 <PawPrint className="h-5 w-5" aria-hidden="true" />
@@ -786,26 +799,28 @@ export function PetHealthDashboard() {
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <PetSwitcher
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <ActionButton icon={AlertTriangle} label="Emergency summary" onClick={() => setActiveView("emergency")} />
+              <AppMenu
                 pets={appData.pets}
                 activePetId={data.id}
+                configured={isSupabaseConfigured}
+                user={user}
+                syncStatus={syncStatus}
+                message={authMessage}
                 onPetChange={setActivePetId}
                 onAddPet={addPet}
                 onRemovePet={removeActivePet}
-              />
-              <ActionButton icon={Download} label="Export all JSON" onClick={() => downloadJson(appData)} variant="secondary" />
-              <ActionButton
-                icon={RefreshCcw}
-                label="Reset sample"
-                onClick={() => {
+                onExportJson={() => downloadJson(appData)}
+                onResetSample={() => {
                   clearLocalPetMemory();
                   loadedStoredLocalCopy.current = false;
                   setAppData(seedAppData);
                 }}
-                variant="secondary"
+                onSyncNow={syncNow}
+                onSignOut={signOut}
+                onDeleteData={deleteCloudAndLocalData}
               />
-              <ActionButton icon={AlertTriangle} label="Emergency summary" onClick={() => setActiveView("emergency")} />
             </div>
           </div>
 
@@ -830,23 +845,6 @@ export function PetHealthDashboard() {
               );
             })}
           </nav>
-          <SyncPanel
-            configured={isSupabaseConfigured}
-            user={user}
-            email={authEmail}
-            password={authPassword}
-            syncStatus={syncStatus}
-            message={authMessage}
-            onEmailChange={setAuthEmail}
-            onPasswordChange={setAuthPassword}
-            onSendMagicLink={sendMagicLink}
-            onSignInWithPassword={signInWithPassword}
-            onCreatePasswordAccount={createPasswordAccount}
-            onSignOut={signOut}
-            onSyncNow={syncNow}
-            onDeleteData={deleteCloudAndLocalData}
-          />
-          <QuickActionRail setActiveView={setActiveView} />
         </header>
 
         <main className="mt-6">
@@ -875,116 +873,148 @@ export function PetHealthDashboard() {
   );
 }
 
-function SyncPanel({
+function AppMenu({
+  pets,
+  activePetId,
   configured,
   user,
-  email,
-  password,
   syncStatus,
   message,
-  onEmailChange,
-  onPasswordChange,
-  onSendMagicLink,
-  onSignInWithPassword,
-  onCreatePasswordAccount,
+  onPetChange,
+  onAddPet,
+  onRemovePet,
+  onExportJson,
+  onResetSample,
   onSignOut,
   onSyncNow,
   onDeleteData
 }: {
+  pets: PetMemoryData[];
+  activePetId: string;
   configured: boolean;
   user: User | null;
-  email: string;
-  password: string;
   syncStatus: SyncStatus;
   message: string;
-  onEmailChange: (value: string) => void;
-  onPasswordChange: (value: string) => void;
-  onSendMagicLink: (event: React.FormEvent<HTMLFormElement>) => void;
-  onSignInWithPassword: () => void;
-  onCreatePasswordAccount: () => void;
+  onPetChange: (petId: string) => void;
+  onAddPet: () => void;
+  onRemovePet: () => void;
+  onExportJson: () => void;
+  onResetSample: () => void;
   onSignOut: () => void;
   onSyncNow: () => void;
   onDeleteData: () => void;
 }) {
   const Icon = configured ? Cloud : CloudOff;
   const label = syncStatusLabel(syncStatus);
+  const statusClass = syncStatusTone(syncStatus);
+  const email = user?.email ?? "Account";
+  const activePet = pets.find((pet) => pet.id === activePetId) ?? pets[0];
 
   return (
-    <section className="mt-4 rounded-lg border border-ink/10 bg-white/75 p-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-mist text-pine">
-            <Icon className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <div>
-            <p className="text-sm font-semibold text-ink">{configured ? "Account sync" : "Local mode"}</p>
-            <p className="mt-1 text-xs leading-5 text-muted">
-              {configured
-                ? user
-                  ? `Signed in as ${user.email ?? "tester"}. Changes save locally first, then sync to Supabase.`
-                  : "Sign in with a beta password or magic link to sync this pet household across devices."
-                : "This build works locally. Add Supabase env vars in Vercel to enable tester accounts and synced household data."}
-            </p>
-            {message && <p className="mt-1 text-xs font-medium text-muted">{message}</p>}
-          </div>
-        </div>
+    <details className="group relative">
+      <summary
+        className="inline-flex min-h-10 cursor-pointer list-none items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40 hover:bg-mist"
+        aria-label="Open app menu"
+      >
+        <Menu className="h-4 w-4" aria-hidden="true" />
+        <span>Menu</span>
+        <ChevronDown className="h-4 w-4 text-muted transition group-open:rotate-180" aria-hidden="true" />
+      </summary>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${syncStatusTone(syncStatus)}`}>{label}</span>
-          {configured && user && (
-            <>
-              <ActionButton icon={RefreshCcw} label="Sync now" onClick={onSyncNow} variant="secondary" />
-              <ActionButton icon={LogOut} label="Sign out + clear" onClick={onSignOut} variant="secondary" />
-              <ActionButton icon={Trash2} label="Delete data" onClick={onDeleteData} variant="secondary" />
-            </>
-          )}
-          {configured && !user && (
-            <form onSubmit={onSendMagicLink} className="flex w-full max-w-3xl flex-col gap-2 xl:flex-row xl:items-center">
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => onEmailChange(event.target.value)}
-                placeholder="tester@example.com"
-                className="input min-w-0 flex-1"
-                required
-              />
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => onPasswordChange(event.target.value)}
-                placeholder="Beta password"
-                className="input min-w-0 flex-1"
-                autoComplete="current-password"
-                minLength={8}
-              />
-              <button
-                type="button"
-                onClick={onSignInWithPassword}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-pine bg-pine px-3 py-2 text-sm font-semibold text-white shadow-soft transition hover:bg-ink"
-              >
-                <LogOut className="h-4 w-4 rotate-180" aria-hidden="true" />
-                Sign in
-              </button>
-              <button
-                type="button"
-                onClick={onCreatePasswordAccount}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40"
-              >
-                <UserPlus className="h-4 w-4" aria-hidden="true" />
-                Create
-              </button>
-              <button
-                type="submit"
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40"
-              >
-                <Mail className="h-4 w-4" aria-hidden="true" />
-                Email link
-              </button>
-            </form>
-          )}
+      <div className="z-20 mt-2 rounded-lg border border-ink/10 bg-white p-4 shadow-soft sm:absolute sm:right-0 sm:w-[28rem]">
+        <div className="space-y-5">
+          <section>
+            <p className="text-xs font-semibold uppercase tracking-normal text-muted">Pet household</p>
+            <div className="mt-3 rounded-lg border border-ink/10 bg-ivory p-3">
+              <label className="grid gap-2 text-sm font-semibold text-ink">
+                Active pet
+                <select value={activePetId} onChange={(event) => onPetChange(event.target.value)} className="input">
+                  {pets.map((pet) => (
+                    <option key={pet.id} value={pet.id}>
+                      {pet.profile.name || "Unnamed pet"} · {displaySpecies(pet.profile)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="mt-2 text-xs leading-5 text-muted">
+                {activePet?.profile.breed || "Species details not set"} · {activePet ? getAge(activePet.profile.birthDate) : "Age not set"}
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <ActionButton icon={Plus} label="Add pet" onClick={onAddPet} variant="secondary" />
+                {pets.length > 1 ? (
+                  <ActionButton icon={Trash2} label="Remove pet" onClick={onRemovePet} variant="danger" />
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-coral/20 bg-coral/5 px-3 py-2 text-sm font-semibold text-coral/60 opacity-60"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    Remove pet
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-normal text-muted">Account</p>
+              <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${statusClass}`}>{label}</span>
+            </div>
+            <div className="mt-3 rounded-lg border border-ink/10 bg-white p-3">
+              <div className="flex items-start gap-3">
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${configured ? "bg-mist text-pine" : "bg-oat text-muted"}`}>
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-ink">{configured ? "Account sync" : "Local preview"}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted">
+                    {configured
+                      ? user
+                        ? `Signed in as ${email}.`
+                        : "Sign in to sync this pet household across devices."
+                      : "Sign-out appears here after logging into the deployed app. This local preview is not connected to Supabase."}
+                  </p>
+                  {message && <p className="mt-1 text-xs font-medium text-muted">{message}</p>}
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {configured && user ? (
+                  <>
+                    <ActionButton icon={RefreshCcw} label="Sync now" onClick={onSyncNow} variant="secondary" />
+                    <ActionButton icon={LogOut} label="Sign out + clear this browser" onClick={onSignOut} variant="danger" />
+                    <ActionButton icon={Trash2} label="Delete synced data" onClick={onDeleteData} variant="danger" />
+                  </>
+                ) : (
+                  <>
+                    <p className="rounded-lg bg-ivory p-3 text-sm leading-6 text-muted">
+                      {configured ? "No account session is active." : "Local mode keeps data in this browser only."}
+                    </p>
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-coral/20 bg-coral/5 px-3 py-2 text-sm font-semibold text-coral/60 opacity-60"
+                    >
+                      <LogOut className="h-4 w-4" aria-hidden="true" />
+                      Sign out
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <p className="text-xs font-semibold uppercase tracking-normal text-muted">Data</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <ActionButton icon={Download} label="Export JSON" onClick={onExportJson} variant="secondary" />
+              {!user && <ActionButton icon={RefreshCcw} label="Reset sample" onClick={onResetSample} variant="secondary" />}
+            </div>
+          </section>
         </div>
       </div>
-    </section>
+    </details>
   );
 }
 
@@ -1255,11 +1285,13 @@ function OverviewView({
   setActiveView: (view: ViewId) => void;
 }) {
   const [reminder, setReminder] = useState<Reminder>(emptyReminder);
+  const [showReminderForm, setShowReminderForm] = useState(false);
   const nextReminders = [...data.reminders]
     .filter((item) => !item.done)
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 4);
-  const latestEvent = [...data.events].sort(sortByDateDesc("date"))[0];
+  const latestEvents = [...data.events].sort(sortByDateDesc("date")).slice(0, 3);
+  const latestEvent = latestEvents[0];
   const activeMeds = data.medications.filter((medication) => medication.status === "Active");
   const recentChanges = getRecentChanges(data, 7);
   const nextReminder = nextReminders[0];
@@ -1277,155 +1309,219 @@ function OverviewView({
       reminders: [{ ...reminder, id: newId("rem") }, ...current.reminders]
     }));
     setReminder(emptyReminder());
+    setShowReminderForm(false);
   };
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr]">
-      <section className="space-y-5">
-        <Panel className="border-pine/15 bg-white/90">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <SectionTitle icon={Home} title="Today care command center" />
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
-                The calm starting point: what needs attention, what changed recently, and what is ready for a vet visit.
+    <div className="space-y-6">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_380px]">
+        <section className="rounded-xl border border-pine bg-pine p-5 text-white shadow-soft sm:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white">
+                  <Home className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <p className="text-sm font-semibold uppercase tracking-normal text-white/75">Today focus</p>
+              </div>
+              <h2 className="mt-4 text-2xl font-semibold leading-tight tracking-normal text-white sm:text-3xl">
+                {nextReminder ? nextReminder.title : latestEvent ? latestEvent.title : "Start with one useful health memory"}
+              </h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/80">
+                {nextReminder
+                  ? `${nextReminder.type} due ${formatDate(nextReminder.dueDate, true)}.`
+                  : latestEvent
+                    ? `${eventLabels[latestEvent.type]} recorded ${formatDate(latestEvent.date, true)}.`
+                    : "Add a symptom, vet visit, medication, or reminder to build a clear care history."}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <ActionButton icon={Sparkles} label="Review changes" onClick={() => setActiveView("recent")} variant="secondary" />
-              <ActionButton icon={AlertTriangle} label="Emergency summary" onClick={() => setActiveView("emergency")} />
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <HeroAction icon={HeartPulse} label="Log symptom" onClick={() => setActiveView("symptoms")} />
+              <HeroAction icon={Sparkles} label="Recent changes" onClick={() => setActiveView("recent")} />
+              <HeroAction icon={AlertTriangle} label="Vet summary" onClick={() => setActiveView("emergency")} strong />
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <TodayCard
-              label="Next care item"
-              value={nextReminder ? nextReminder.title : "Nothing due"}
-              detail={nextReminder ? `${nextReminder.type} · ${formatDate(nextReminder.dueDate, true)}` : "No open reminders right now."}
-              icon={Bell}
-              tone="text-amber"
-            />
-            <TodayCard
-              label="Latest health memory"
-              value={latestEvent?.title ?? "No event yet"}
-              detail={latestEvent ? `${eventLabels[latestEvent.type]} · ${formatDate(latestEvent.date, true)}` : "Add a symptom, visit, or care note."}
-              icon={NotebookTabs}
-              tone="text-pine"
-            />
-            <TodayCard
-              label="Last 7 days"
-              value={`${recentChanges.events.length + recentChanges.symptoms.length} changes`}
-              detail={`${recentChanges.symptoms.length} symptoms · ${currency(recentChanges.expenseTotal)} care cost`}
-              icon={CalendarClock}
-              tone="text-clinical"
-            />
-            <TodayCard
-              label="Vet-ready essentials"
-              value={`${emergencyReadyCount}/4 ready`}
-              detail="Allergies, meds, contacts, recent events"
-              icon={ShieldCheck}
-              tone="text-pine"
-            />
+          <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <CareSignal label="Active meds" value={metrics.activeMedicationCount} detail="Current schedule" icon={Pill} tone="text-lilac" elevated />
+            <CareSignal label="Open reminders" value={metrics.openReminderCount} detail="Follow-ups and care" icon={Bell} tone="text-amber" elevated />
+            <CareSignal label="30-day cost" value={currency(metrics.costLast30)} detail="Care spend" icon={BadgeDollarSign} tone="text-pine" elevated />
+            <CareSignal label="Recent symptoms" value={metrics.symptomsLast30} detail="Last 30 days" icon={HeartPulse} tone="text-coral" elevated />
           </div>
-        </Panel>
+        </section>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric label="Active meds" value={metrics.activeMedicationCount} icon={Pill} tone="text-lilac" />
-          <Metric label="30-day cost" value={currency(metrics.costLast30)} icon={BadgeDollarSign} tone="text-pine" />
-          <Metric label="Open reminders" value={metrics.openReminderCount} icon={Bell} tone="text-amber" />
-          <Metric label="Recent symptoms" value={metrics.symptomsLast30} icon={HeartPulse} tone="text-coral" />
-        </div>
-
-        <Panel>
-          <SectionTitle icon={Stethoscope} title="Current care snapshot" />
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <InfoBlock title="Conditions" items={data.profile.conditions} />
-            <InfoBlock title="Allergies" items={data.profile.allergies} danger />
-            <InfoBlock title="Care instructions" items={data.profile.careInstructions} />
-          </div>
-        </Panel>
-
-        <Panel>
+        <Panel className="border-coral/15 bg-coral/5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <SectionTitle icon={NotebookTabs} title="Latest health memory" />
-            <ActionButton icon={Plus} label="Add event" onClick={() => setActiveView("timeline")} variant="secondary" />
-          </div>
-          <div className="mt-4 space-y-3">
-            {[...data.events]
-              .sort(sortByDateDesc("date"))
-              .slice(0, 4)
-              .map((event) => (
-                <TimelineItem key={event.id} event={event} />
-              ))}
-          </div>
-        </Panel>
-      </section>
-
-      <aside className="space-y-5">
-        <Panel>
-          <SectionTitle icon={Plus} title="Quick log" />
-          <div className="mt-4 grid gap-2">
-            <ActionButton icon={HeartPulse} label="Log a symptom" onClick={() => setActiveView("symptoms")} variant="secondary" />
-            <ActionButton icon={Pill} label="Update medication" onClick={() => setActiveView("meds")} variant="secondary" />
-            <ActionButton icon={BadgeDollarSign} label="Add expense" onClick={() => setActiveView("expenses")} variant="secondary" />
-          </div>
-        </Panel>
-
-        <Panel>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <SectionTitle icon={AlertTriangle} title="Emergency essentials" />
+            <SectionTitle icon={AlertTriangle} title="Vet essentials" />
             <ActionButton icon={Printer} label="Print" onClick={() => setActiveView("emergency")} variant="secondary" />
           </div>
-          <dl className="mt-4 space-y-3 text-sm">
+          <dl className="mt-5 space-y-3 text-sm">
             <Definition label="Primary vet" value={`${data.profile.vets[0]?.clinic ?? "Not set"} · ${data.profile.vets[0]?.phone ?? ""}`} />
             <Definition label="After-hours" value={data.profile.vets[0]?.afterHours ?? "Not set"} />
             <Definition label="Microchip" value={data.profile.microchip} />
-            <Definition label="Insurance" value={data.profile.insurance} />
+            <Definition label="Ready summary" value={`${emergencyReadyCount}/4 essentials complete`} />
           </dl>
         </Panel>
+      </div>
 
-        <Panel>
-          <SectionTitle icon={Bell} title="Reminders and to-dos" />
-          <div className="mt-4 space-y-3">
-            {nextReminders.map((item) => (
-              <ReminderRow key={item.id} reminder={item} commit={commit} />
-            ))}
-            {nextReminders.length === 0 && <EmptyState text="No open reminders." />}
-          </div>
-          <div className="mt-5 grid gap-3">
-            <Field label="Task">
-              <input
-                value={reminder.title}
-                onChange={(event) => setReminder({ ...reminder, title: event.target.value })}
-                placeholder="e.g. Book physio recheck"
-                className="input"
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="space-y-5">
+          <Panel className="bg-white/95">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <SectionTitle icon={NotebookTabs} title="Recent health memory" />
+              <ActionButton icon={Plus} label="Add event" onClick={() => setActiveView("timeline")} variant="secondary" />
+            </div>
+            <div className="mt-4 space-y-3">
+              {latestEvents.map((event) => (
+                <TimelineItem key={event.id} event={event} />
+              ))}
+              {latestEvents.length === 0 && <EmptyState text="No health events yet." />}
+            </div>
+          </Panel>
+
+          <Panel className="bg-ivory/70">
+            <SectionTitle icon={Stethoscope} title="Care context" />
+            <div className="mt-4 grid gap-4 lg:grid-cols-3">
+              <InfoBlock title="Conditions" items={data.profile.conditions} />
+              <InfoBlock title="Allergies" items={data.profile.allergies} danger />
+              <InfoBlock title="Care instructions" items={data.profile.careInstructions} />
+            </div>
+          </Panel>
+        </section>
+
+        <aside className="space-y-5">
+          <Panel className="border-pine/10 bg-mist/70">
+            <SectionTitle icon={Plus} title="Quick add" />
+            <div className="mt-4 grid gap-2">
+              <ActionButton icon={HeartPulse} label="Log symptom" onClick={() => setActiveView("symptoms")} variant="secondary" />
+              <ActionButton icon={Stethoscope} label="Vet visit" onClick={() => setActiveView("timeline")} variant="secondary" />
+              <ActionButton icon={Pill} label="Medication" onClick={() => setActiveView("meds")} variant="secondary" />
+              <ActionButton icon={BadgeDollarSign} label="Cost" onClick={() => setActiveView("expenses")} variant="secondary" />
+            </div>
+          </Panel>
+
+          <Panel className="bg-white/95">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <SectionTitle icon={Bell} title="Reminders" />
+              <ActionButton
+                icon={Plus}
+                label={showReminderForm ? "Close" : "Add"}
+                onClick={() => setShowReminderForm((current) => !current)}
+                variant="secondary"
               />
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Type">
-                <select
-                  value={reminder.type}
-                  onChange={(event) => setReminder({ ...reminder, type: event.target.value as Reminder["type"] })}
-                  className="input"
-                >
-                  {["Medication", "Appointment", "Follow-up", "Refill", "Home care"].map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Due">
+            </div>
+            <div className="mt-4 space-y-3">
+              {nextReminders.map((item) => (
+                <ReminderRow key={item.id} reminder={item} commit={commit} />
+              ))}
+              {nextReminders.length === 0 && <EmptyState text="No open reminders." />}
+            </div>
+            {showReminderForm && (
+              <div className="mt-5 grid gap-3 rounded-lg border border-ink/10 bg-ivory p-3">
+                <Field label="Task">
+                  <input
+                    value={reminder.title}
+                    onChange={(event) => setReminder({ ...reminder, title: event.target.value })}
+                    placeholder="e.g. Book physio recheck"
+                    className="input"
+                  />
+                </Field>
+                <Field label="Type">
+                  <select
+                    value={reminder.type}
+                    onChange={(event) => setReminder({ ...reminder, type: event.target.value as Reminder["type"] })}
+                    className="input"
+                  >
+                    {["Medication", "Appointment", "Follow-up", "Refill", "Home care"].map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Due">
                 <input
                   type="datetime-local"
                   value={reminder.dueDate}
                   onChange={(event) => setReminder({ ...reminder, dueDate: event.target.value })}
                   className="input"
                 />
-              </Field>
+                </Field>
+                <ActionButton icon={Plus} label="Save reminder" onClick={submitReminder} />
+              </div>
+            )}
+          </Panel>
+
+          <Panel className="border-clinical/10 bg-skywash/70">
+            <SectionTitle icon={CalendarClock} title="Last 7 days" />
+            <div className="mt-4 grid gap-3">
+              <CareSignal
+                label="Changes"
+                value={recentChanges.events.length + recentChanges.symptoms.length}
+                detail={`${recentChanges.symptoms.length} symptoms logged`}
+                icon={Sparkles}
+                tone="text-clinical"
+              />
+              <CareSignal label="Care cost" value={currency(recentChanges.expenseTotal)} detail="Recent spend" icon={BadgeDollarSign} tone="text-amber" />
             </div>
-            <ActionButton icon={Plus} label="Add reminder" onClick={submitReminder} />
-          </div>
-        </Panel>
-      </aside>
+          </Panel>
+        </aside>
+      </div>
     </div>
+  );
+}
+
+function CareSignal({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  tone,
+  elevated = false
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  icon: LucideIcon;
+  tone: string;
+  elevated?: boolean;
+}) {
+  return (
+    <div className={`rounded-lg border p-3 ${elevated ? "border-white/15 bg-white/95 text-ink shadow-sm" : "border-ink/10 bg-white/75"}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-normal text-muted">{label}</p>
+          <p className="mt-2 text-xl font-semibold text-ink">{value}</p>
+          <p className="mt-1 text-xs text-muted">{detail}</p>
+        </div>
+        <Icon className={`h-4 w-4 shrink-0 ${tone}`} aria-hidden="true" />
+      </div>
+    </div>
+  );
+}
+
+function HeroAction({
+  icon: Icon,
+  label,
+  onClick,
+  strong = false
+}: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  strong?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+        strong
+          ? "border-white bg-white text-pine shadow-soft hover:bg-mist"
+          : "border-white/25 bg-white/10 text-white hover:bg-white/20"
+      }`}
+    >
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span>{label}</span>
+    </button>
   );
 }
 
@@ -3017,7 +3113,7 @@ function Metric({ label, value, icon: Icon, tone }: { label: string; value: stri
 
 function InfoBlock({ title, items, danger = false }: { title: string; items: string[]; danger?: boolean }) {
   return (
-    <div className="rounded-lg border border-ink/10 bg-white/70 p-4">
+    <div className={`rounded-lg border p-4 ${danger ? "border-coral/15 bg-coral/5" : "border-ink/10 bg-white/60"}`}>
       <h3 className={`text-sm font-semibold ${danger ? "text-coral" : "text-ink"}`}>{title}</h3>
       <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
         {items.map((item) => (
@@ -3046,17 +3142,20 @@ function ActionButton({
   icon: LucideIcon;
   label: string;
   onClick: () => void;
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "danger";
 }) {
+  const className =
+    variant === "primary"
+      ? "border-pine bg-pine text-white shadow-soft hover:bg-ink"
+      : variant === "danger"
+        ? "border-coral/25 bg-coral/10 text-coral hover:border-coral hover:bg-coral hover:text-white"
+        : "border-ink/10 bg-white text-ink hover:border-pine/40 hover:bg-mist";
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-        variant === "primary"
-          ? "border-pine bg-pine text-white shadow-soft hover:bg-ink"
-          : "border-ink/10 bg-white text-ink hover:border-pine/40 hover:bg-mist"
-      }`}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${className}`}
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span>{label}</span>
@@ -3071,7 +3170,7 @@ function StatusPill({ label }: { label: string }) {
 
 function TimelineItem({ event }: { event: HealthEvent }) {
   return (
-    <article className="rounded-lg border border-ink/10 bg-white/75 p-4">
+    <article className={`rounded-lg border border-l-4 border-ink/10 bg-white/85 p-4 shadow-sm ${eventAccent[event.type]}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
