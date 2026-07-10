@@ -31,6 +31,7 @@ import {
   Stethoscope,
   Target,
   Trash2,
+  UserPlus,
   Upload
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -402,6 +403,7 @@ export function PetHealthDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(isSupabaseConfigured ? "checking" : "local");
   const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const cloudReadyForUser = useRef<string | null>(null);
   const loadedStoredLocalCopy = useRef(false);
@@ -623,6 +625,78 @@ export function PetHealthDashboard() {
     setAuthMessage("Check your email for a sign-in link.");
   };
 
+  const signInWithPassword = async () => {
+    if (!supabase) return;
+    const email = authEmail.trim().toLowerCase();
+    if (!email || !authPassword) {
+      setSyncStatus("signed-out");
+      setAuthMessage("Enter your tester email and beta password.");
+      return;
+    }
+    if (!isEmailAllowedForTesting(email)) {
+      setSyncStatus("signed-out");
+      setAuthMessage("This email is not on the tester allowlist for this build.");
+      return;
+    }
+
+    setSyncStatus("checking");
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password: authPassword
+    });
+
+    if (error) {
+      setSyncStatus("error");
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setAuthPassword("");
+    setAuthMessage("Signed in. Loading your synced pet household.");
+  };
+
+  const createPasswordAccount = async () => {
+    if (!supabase) return;
+    const email = authEmail.trim().toLowerCase();
+    if (!email || !authPassword) {
+      setSyncStatus("signed-out");
+      setAuthMessage("Enter your tester email and choose a beta password.");
+      return;
+    }
+    if (!isEmailAllowedForTesting(email)) {
+      setSyncStatus("signed-out");
+      setAuthMessage("This email is not on the tester allowlist for this build.");
+      return;
+    }
+    if (authPassword.length < 8) {
+      setSyncStatus("signed-out");
+      setAuthMessage("Use at least 8 characters for the beta password.");
+      return;
+    }
+
+    setSyncStatus("checking");
+    const { data: signUpData, error } = await supabase.auth.signUp({
+      email,
+      password: authPassword,
+      options: {
+        emailRedirectTo: window.location.origin
+      }
+    });
+
+    if (error) {
+      setSyncStatus("error");
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setAuthPassword("");
+    setAuthMessage(
+      signUpData.session
+        ? "Account created. Loading your synced pet household."
+        : "Account created. If Supabase email confirmation is on, check your email before signing in."
+    );
+  };
+
   const signOut = async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
@@ -744,10 +818,14 @@ export function PetHealthDashboard() {
             configured={isSupabaseConfigured}
             user={user}
             email={authEmail}
+            password={authPassword}
             syncStatus={syncStatus}
             message={authMessage}
             onEmailChange={setAuthEmail}
+            onPasswordChange={setAuthPassword}
             onSendMagicLink={sendMagicLink}
+            onSignInWithPassword={signInWithPassword}
+            onCreatePasswordAccount={createPasswordAccount}
             onSignOut={signOut}
             onSyncNow={syncNow}
             onDeleteData={deleteCloudAndLocalData}
@@ -785,10 +863,14 @@ function SyncPanel({
   configured,
   user,
   email,
+  password,
   syncStatus,
   message,
   onEmailChange,
+  onPasswordChange,
   onSendMagicLink,
+  onSignInWithPassword,
+  onCreatePasswordAccount,
   onSignOut,
   onSyncNow,
   onDeleteData
@@ -796,10 +878,14 @@ function SyncPanel({
   configured: boolean;
   user: User | null;
   email: string;
+  password: string;
   syncStatus: SyncStatus;
   message: string;
   onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
   onSendMagicLink: (event: React.FormEvent<HTMLFormElement>) => void;
+  onSignInWithPassword: () => void;
+  onCreatePasswordAccount: () => void;
   onSignOut: () => void;
   onSyncNow: () => void;
   onDeleteData: () => void;
@@ -820,7 +906,7 @@ function SyncPanel({
               {configured
                 ? user
                   ? `Signed in as ${user.email ?? "tester"}. Changes save locally first, then sync to Supabase.`
-                  : "Sign in with a magic link to sync this pet household across devices."
+                  : "Sign in with a beta password or magic link to sync this pet household across devices."
                 : "This build works locally. Add Supabase env vars in Vercel to enable tester accounts and synced household data."}
             </p>
             {message && <p className="mt-1 text-xs font-medium text-muted">{message}</p>}
@@ -837,21 +923,46 @@ function SyncPanel({
             </>
           )}
           {configured && !user && (
-            <form onSubmit={onSendMagicLink} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <form onSubmit={onSendMagicLink} className="flex w-full max-w-3xl flex-col gap-2 xl:flex-row xl:items-center">
               <input
                 type="email"
                 value={email}
                 onChange={(event) => onEmailChange(event.target.value)}
                 placeholder="tester@example.com"
-                className="input min-w-56"
+                className="input min-w-0 flex-1"
                 required
               />
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => onPasswordChange(event.target.value)}
+                placeholder="Beta password"
+                className="input min-w-0 flex-1"
+                autoComplete="current-password"
+                minLength={8}
+              />
               <button
-                type="submit"
+                type="button"
+                onClick={onSignInWithPassword}
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-pine bg-pine px-3 py-2 text-sm font-semibold text-white shadow-soft transition hover:bg-ink"
               >
+                <LogOut className="h-4 w-4 rotate-180" aria-hidden="true" />
+                Sign in
+              </button>
+              <button
+                type="button"
+                onClick={onCreatePasswordAccount}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40"
+              >
+                <UserPlus className="h-4 w-4" aria-hidden="true" />
+                Create
+              </button>
+              <button
+                type="submit"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40"
+              >
                 <Mail className="h-4 w-4" aria-hidden="true" />
-                Send link
+                Email link
               </button>
             </form>
           )}

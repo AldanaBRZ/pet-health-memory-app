@@ -10,6 +10,9 @@ create table if not exists public.pet_memories (
 
 alter table public.pet_memories enable row level security;
 
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on table public.pet_memories to authenticated;
+
 alter table public.pet_memories
 drop constraint if exists pet_memories_data_size_check;
 
