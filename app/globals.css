@@ -10,6 +10,10 @@
   .input:hover {
     @apply border-pine/30;
   }
+
+  .input:disabled {
+    @apply cursor-not-allowed border-ink/10 bg-oat/50 text-ink opacity-100 shadow-none;
+  }
 }
 
 :root {

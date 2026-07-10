@@ -3,6 +3,7 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   BadgeDollarSign,
   Bell,
   CalendarClock,
@@ -24,17 +25,20 @@ import {
   MessageSquareText,
   NotebookTabs,
   PawPrint,
+  Pencil,
   Pill,
   Plus,
   Printer,
   RefreshCcw,
+  Save,
   ShieldCheck,
   Sparkles,
   Stethoscope,
   Target,
   Trash2,
   UserPlus,
-  Upload
+  Upload,
+  X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
@@ -109,6 +113,17 @@ const navItems: Array<{ id: ViewId; label: string; icon: LucideIcon }> = [
 ];
 
 const primaryNavIds = navItems.map((item) => item.id);
+
+const moreToolItems: Array<{ view: ViewId; title: string; description: string; icon: LucideIcon }> = [
+  { view: "profile", title: "Profile", description: "Identity, conditions, allergies, care instructions, and vet contacts.", icon: PawPrint },
+  { view: "meds", title: "Medication tracker", description: "Dosage, frequency, refill notes, and active or ended meds.", icon: Pill },
+  { view: "symptoms", title: "Symptom log", description: "Severity, body area, notes, and photo/file placeholders.", icon: HeartPulse },
+  { view: "expenses", title: "Costs", description: "Vet, meds, physio, food, insurance, and emergency spend.", icon: BadgeDollarSign },
+  { view: "longevity", title: "Longevity", description: "Prevention, habits, watchlist, quality notes, and prep questions.", icon: ShieldCheck },
+  { view: "recent", title: "What changed", description: "7, 30, and 90 day summaries for care conversations.", icon: Sparkles }
+];
+
+const moreToolIds = moreToolItems.map((item) => item.view);
 
 const eventLabels: Record<EventType, string> = {
   symptom: "Symptom",
@@ -239,6 +254,14 @@ const emptyExpense = (): Expense => ({
   vendor: "",
   amount: 0,
   note: ""
+});
+
+const cloneProfile = (profile: PetProfile): PetProfile => ({
+  ...profile,
+  allergies: [...profile.allergies],
+  conditions: [...profile.conditions],
+  careInstructions: [...profile.careInstructions],
+  vets: profile.vets.map((vet) => ({ ...vet }))
 });
 
 const emptyReminder = (): Reminder => ({
@@ -761,6 +784,7 @@ export function PetHealthDashboard() {
 
   const metrics = useMemo(() => buildMetrics(data), [data]);
   const ActiveIcon = viewMeta[activeView].icon;
+  const showMoreToolsNav = activeView === "more" || moreToolIds.includes(activeView);
 
   if (isSupabaseConfigured && !user) {
     return (
@@ -781,24 +805,41 @@ export function PetHealthDashboard() {
   return (
     <div className="print-root min-h-screen px-4 py-4 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <header className="no-print border-b border-ink/10 pb-4">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-pine text-white shadow-soft">
-                <PawPrint className="h-5 w-5" aria-hidden="true" />
+        <header className="no-print pb-5">
+          <div className="rounded-xl border border-ink/10 bg-white/90 p-4 shadow-soft sm:p-5">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+              <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-pine text-white shadow-soft">
+                  <PawPrint className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-mist px-3 py-1 text-[11px] font-semibold uppercase tracking-normal text-pine">
+                      Pet Health Memory
+                    </span>
+                    <span className="rounded-full border border-ink/10 bg-ivory px-3 py-1 text-[11px] font-semibold uppercase tracking-normal text-muted">
+                      Longevity tracker
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-2">
+                    <h1 className="text-3xl font-semibold leading-none tracking-normal text-ink sm:text-4xl">
+                      {data.profile.name}
+                    </h1>
+                    <span className="mb-1 rounded-lg border border-pine/15 bg-pine/5 px-2.5 py-1 text-sm font-semibold text-pine">
+                      Care dashboard
+                    </span>
+                  </div>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
+                    A vet-ready memory for symptoms, meds, visits, costs, and care instructions.
+                  </p>
+                  <dl className="mt-4 grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
+                    <PetFact label="Species" value={displaySpecies(data.profile)} />
+                    <PetFact label="Breed" value={data.profile.breed || "Type not set"} />
+                    <PetFact label="Age" value={getAge(data.profile.birthDate)} />
+                    <PetFact label="Weight" value={`${data.profile.weightKg.toFixed(1)} kg`} />
+                  </dl>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-normal text-muted">
-                  A health memory and longevity tracker for serious pet parents.
-                </p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-normal text-ink sm:text-3xl">
-                  {data.profile.name}'s care dashboard
-                </h1>
-                <p className="mt-1 text-sm text-muted">
-                  Vet-ready history · {displaySpecies(data.profile)} · {data.profile.breed || "Type not set"} · {getAge(data.profile.birthDate)} · {data.profile.weightKg.toFixed(1)} kg
-                </p>
-              </div>
-            </div>
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
               <ActionButton icon={AlertTriangle} label="Emergency summary" onClick={() => setActiveView("emergency")} />
               <AppMenu
@@ -821,6 +862,7 @@ export function PetHealthDashboard() {
                 onSignOut={signOut}
                 onDeleteData={deleteCloudAndLocalData}
               />
+            </div>
             </div>
           </div>
 
@@ -845,6 +887,28 @@ export function PetHealthDashboard() {
               );
             })}
           </nav>
+
+          {showMoreToolsNav && (
+            <nav className="mt-3 flex gap-2 overflow-x-auto rounded-xl border border-ink/10 bg-white/70 p-2" aria-label="More tools">
+              {moreToolItems.map((item) => {
+                const selected = item.view === activeView;
+                return (
+                  <button
+                    key={item.view}
+                    type="button"
+                    onClick={() => setActiveView(item.view)}
+                    className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                      selected
+                        ? "border-pine bg-pine text-white shadow-sm"
+                        : "border-transparent bg-ivory text-muted hover:border-pine/20 hover:bg-white hover:text-ink"
+                    }`}
+                  >
+                    {item.title}
+                  </button>
+                );
+              })}
+            </nav>
+          )}
         </header>
 
         <main className="mt-6">
@@ -869,6 +933,15 @@ export function PetHealthDashboard() {
           {activeView === "emergency" && <EmergencyView data={data} />}
         </main>
       </div>
+    </div>
+  );
+}
+
+function PetFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-ink/10 bg-ivory px-3 py-2">
+      <dt className="text-[11px] font-semibold uppercase tracking-normal text-muted">{label}</dt>
+      <dd className="mt-1 text-sm font-semibold leading-5 text-ink">{value}</dd>
     </div>
   );
 }
@@ -1343,10 +1416,50 @@ function OverviewView({
           </div>
 
           <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <CareSignal label="Active meds" value={metrics.activeMedicationCount} detail="Current schedule" icon={Pill} tone="text-lilac" elevated />
-            <CareSignal label="Open reminders" value={metrics.openReminderCount} detail="Follow-ups and care" icon={Bell} tone="text-amber" elevated />
-            <CareSignal label="30-day cost" value={currency(metrics.costLast30)} detail="Care spend" icon={BadgeDollarSign} tone="text-pine" elevated />
-            <CareSignal label="Recent symptoms" value={metrics.symptomsLast30} detail="Last 30 days" icon={HeartPulse} tone="text-coral" elevated />
+            <CareSignal
+              label="Active meds"
+              value={metrics.activeMedicationCount}
+              detail="Current schedule"
+              icon={Pill}
+              tone="text-lilac"
+              accent="bg-lilac"
+              elevated
+              actionLabel="Open meds"
+              onClick={() => setActiveView("meds")}
+            />
+            <CareSignal
+              label="Open reminders"
+              value={metrics.openReminderCount}
+              detail="Follow-ups and care"
+              icon={Bell}
+              tone="text-amber"
+              accent="bg-amber"
+              elevated
+              actionLabel="Open care plan"
+              onClick={() => setActiveView("care")}
+            />
+            <CareSignal
+              label="30-day cost"
+              value={currency(metrics.costLast30)}
+              detail="Care spend"
+              icon={BadgeDollarSign}
+              tone="text-pine"
+              accent="bg-sage"
+              elevated
+              actionLabel="Open costs"
+              onClick={() => setActiveView("expenses")}
+            />
+            <CareSignal
+              label="Recent symptoms"
+              value={metrics.symptomsLast30}
+              detail="Last 30 days"
+              icon={HeartPulse}
+              tone="text-coral"
+              accent="bg-coral"
+              elevated
+              actionLabel="Open symptoms"
+              onClick={() => setActiveView("symptoms")}
+            />
           </div>
         </section>
 
@@ -1475,7 +1588,10 @@ function CareSignal({
   detail,
   icon: Icon,
   tone,
-  elevated = false
+  elevated = false,
+  accent,
+  actionLabel,
+  onClick
 }: {
   label: string;
   value: string | number;
@@ -1483,17 +1599,49 @@ function CareSignal({
   icon: LucideIcon;
   tone: string;
   elevated?: boolean;
+  accent?: string;
+  actionLabel?: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div className={`rounded-lg border p-3 ${elevated ? "border-white/15 bg-white/95 text-ink shadow-sm" : "border-ink/10 bg-white/75"}`}>
+  const baseClass = `rounded-lg border p-3 ${
+    elevated ? "border-white/15 bg-white/95 text-ink shadow-sm" : "border-ink/10 bg-white/75"
+  }`;
+  const content = (
+    <>
+      {accent && <span className={`mb-3 block h-1.5 w-10 rounded-full ${accent}`} aria-hidden="true" />}
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-normal text-muted">{label}</p>
           <p className="mt-2 text-xl font-semibold text-ink">{value}</p>
           <p className="mt-1 text-xs text-muted">{detail}</p>
+          {actionLabel && (
+            <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-pine">
+              {actionLabel}
+              <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" aria-hidden="true" />
+            </span>
+          )}
         </div>
         <Icon className={`h-4 w-4 shrink-0 ${tone}`} aria-hidden="true" />
       </div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`group w-full text-left transition hover:-translate-y-0.5 hover:border-white/40 hover:bg-white focus:outline-none focus:ring-2 focus:ring-white/70 ${baseClass}`}
+        aria-label={`${label}: ${value}. ${detail}. ${actionLabel ?? "Open section"}.`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={baseClass}>
+      {content}
     </div>
   );
 }
@@ -1662,14 +1810,14 @@ function MoreView({
   metrics: ReturnType<typeof buildMetrics>;
   setActiveView: (view: ViewId) => void;
 }) {
-  const sections: Array<{ view: ViewId; title: string; description: string; icon: LucideIcon; meta: string }> = [
-    { view: "profile", title: "Profile", description: "Identity, conditions, allergies, care instructions, and vet contacts.", icon: PawPrint, meta: `${data.profile.conditions.length} conditions` },
-    { view: "meds", title: "Medication tracker", description: "Dosage, frequency, refill notes, and active or ended meds.", icon: Pill, meta: `${metrics.activeMedicationCount} active` },
-    { view: "symptoms", title: "Symptom log", description: "Severity, body area, notes, and photo/file placeholders.", icon: HeartPulse, meta: `${metrics.symptomsLast30} in 30d` },
-    { view: "expenses", title: "Costs", description: "Vet, meds, physio, food, insurance, and emergency spend.", icon: BadgeDollarSign, meta: currency(metrics.costLast30) },
-    { view: "longevity", title: "Longevity", description: "Prevention, habits, watchlist, quality notes, and prep questions.", icon: ShieldCheck, meta: `${metrics.routineCompletionRate}% routines` },
-    { view: "recent", title: "What changed", description: "7, 30, and 90 day summaries for care conversations.", icon: Sparkles, meta: "Vet prep" }
-  ];
+  const metaByView: Partial<Record<ViewId, string>> = {
+    profile: `${data.profile.conditions.length} conditions`,
+    meds: `${metrics.activeMedicationCount} active`,
+    symptoms: `${metrics.symptomsLast30} in 30d`,
+    expenses: currency(metrics.costLast30),
+    longevity: `${metrics.routineCompletionRate}% routines`,
+    recent: "Vet prep"
+  };
 
   return (
     <div className="space-y-5">
@@ -1681,7 +1829,7 @@ function MoreView({
       </Panel>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {sections.map((section) => {
+        {moreToolItems.map((section) => {
           const Icon = section.icon;
           return (
             <button
@@ -1694,7 +1842,7 @@ function MoreView({
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-mist text-pine">
                   <Icon className="h-4 w-4" aria-hidden="true" />
                 </span>
-                <span className="rounded-lg bg-oat px-2 py-1 text-xs font-semibold text-muted">{section.meta}</span>
+                <span className="rounded-lg bg-oat px-2 py-1 text-xs font-semibold text-muted">{metaByView[section.view]}</span>
               </div>
               <h3 className="mt-4 text-base font-semibold text-ink">{section.title}</h3>
               <p className="mt-2 text-sm leading-6 text-muted">{section.description}</p>
@@ -1713,8 +1861,32 @@ function ProfileView({
   data: PetMemoryData;
   commit: (updater: (current: PetMemoryData) => PetMemoryData) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftProfile, setDraftProfile] = useState<PetProfile>(() => cloneProfile(data.profile));
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraftProfile(cloneProfile(data.profile));
+    }
+  }, [data.id, data.profile, isEditing]);
+
+  const startEditing = () => {
+    setDraftProfile(cloneProfile(data.profile));
+    setIsEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setDraftProfile(cloneProfile(data.profile));
+    setIsEditing(false);
+  };
+
+  const saveProfile = () => {
+    commit((current) => ({ ...current, profile: cloneProfile(draftProfile) }));
+    setIsEditing(false);
+  };
+
   const updateProfile = <K extends keyof PetProfile>(field: K, value: PetProfile[K]) => {
-    commit((current) => ({ ...current, profile: { ...current.profile, [field]: value } }));
+    setDraftProfile((current) => ({ ...current, [field]: value }));
   };
 
   const updateList = (field: "allergies" | "conditions" | "careInstructions", value: string) => {
@@ -1728,59 +1900,88 @@ function ProfileView({
   };
 
   const updateVet = <K extends keyof VetContact>(id: string, field: K, value: VetContact[K]) => {
-    commit((current) => ({
+    setDraftProfile((current) => ({
       ...current,
-      profile: {
-        ...current.profile,
-        vets: current.profile.vets.map((vet) => (vet.id === id ? { ...vet, [field]: value } : vet))
-      }
+      vets: current.vets.map((vet) => (vet.id === id ? { ...vet, [field]: value } : vet))
     }));
   };
 
   const addVet = () => {
-    commit((current) => ({
+    setDraftProfile((current) => ({
       ...current,
-      profile: {
-        ...current.profile,
-        vets: [
-          ...current.profile.vets,
-          {
-            id: newId("vet"),
-            clinic: "",
-            clinician: "",
-            role: "Specialist",
-            phone: "",
-            email: "",
-            address: "",
-            afterHours: ""
-          }
-        ]
-      }
+      vets: [
+        ...current.vets,
+        {
+          id: newId("vet"),
+          clinic: "",
+          clinician: "",
+          role: "Specialist",
+          phone: "",
+          email: "",
+          address: "",
+          afterHours: ""
+        }
+      ]
+    }));
+  };
+
+  const removeVet = (vet: VetContact) => {
+    const label = vet.clinic || vet.clinician || "this contact";
+    if (!window.confirm(`Delete ${label} from this draft? This will only be permanent after you save changes.`)) return;
+    setDraftProfile((current) => ({
+      ...current,
+      vets: current.vets.filter((item) => item.id !== vet.id)
     }));
   };
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
+      <div className="lg:col-span-2 rounded-lg border border-ink/10 bg-white/85 p-4 shadow-soft">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-ink">{isEditing ? "Editing profile details" : "Profile details are locked"}</p>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              {isEditing
+                ? "Review your changes, then save them to the pet memory."
+                : "Press Edit before changing profile, medical notes, or vet contacts."}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {isEditing ? (
+              <>
+                <ActionButton icon={X} label="Cancel" onClick={cancelEditing} variant="secondary" />
+                <ActionButton icon={Save} label="Save changes" onClick={saveProfile} />
+              </>
+            ) : (
+              <ActionButton icon={Pencil} label="Edit" onClick={startEditing} variant="secondary" />
+            )}
+          </div>
+        </div>
+      </div>
+
       <Panel>
         <SectionTitle icon={PawPrint} title="Pet profile" />
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <Field label="Name">
-            <input value={data.profile.name} onChange={(event) => updateProfile("name", event.target.value)} className="input" />
+            <input
+              value={draftProfile.name}
+              onChange={(event) => updateProfile("name", event.target.value)}
+              disabled={!isEditing}
+              className="input"
+            />
           </Field>
           <Field label="Species">
             <select
-              value={data.profile.species}
+              value={draftProfile.species}
               onChange={(event) => {
                 const species = event.target.value as PetProfile["species"];
-                commit((current) => ({
+                setDraftProfile((current) => ({
                   ...current,
-                  profile: {
-                    ...current.profile,
-                    species,
-                    customSpecies: species === "Other" ? current.profile.customSpecies ?? "" : current.profile.customSpecies
-                  }
+                  species,
+                  customSpecies: species === "Other" ? current.customSpecies ?? "" : current.customSpecies
                 }));
               }}
+              disabled={!isEditing}
               className="input"
             >
               {speciesOptions.map((species) => (
@@ -1790,40 +1991,63 @@ function ProfileView({
           </Field>
           <Field label="Species detail">
             <input
-              value={data.profile.customSpecies ?? ""}
+              value={draftProfile.customSpecies ?? ""}
               onChange={(event) => updateProfile("customSpecies", event.target.value)}
               placeholder="e.g. Bearded dragon, ferret, parrot"
+              disabled={!isEditing}
               className="input"
             />
           </Field>
           <Field label="Breed / type">
-            <input value={data.profile.breed} onChange={(event) => updateProfile("breed", event.target.value)} className="input" />
+            <input
+              value={draftProfile.breed}
+              onChange={(event) => updateProfile("breed", event.target.value)}
+              disabled={!isEditing}
+              className="input"
+            />
           </Field>
           <Field label="Birth date">
             <input
               type="date"
-              value={data.profile.birthDate}
+              value={draftProfile.birthDate}
               onChange={(event) => updateProfile("birthDate", event.target.value)}
+              disabled={!isEditing}
               className="input"
             />
           </Field>
           <Field label="Sex">
-            <input value={data.profile.sex} onChange={(event) => updateProfile("sex", event.target.value)} className="input" />
+            <input
+              value={draftProfile.sex}
+              onChange={(event) => updateProfile("sex", event.target.value)}
+              disabled={!isEditing}
+              className="input"
+            />
           </Field>
           <Field label="Weight kg">
             <input
               type="number"
               step="0.1"
-              value={data.profile.weightKg}
-              onChange={(event) => updateProfile("weightKg", Number(event.target.value))}
+              value={draftProfile.weightKg}
+              onChange={(event) => updateProfile("weightKg", Number(event.target.value || 0))}
+              disabled={!isEditing}
               className="input"
             />
           </Field>
           <Field label="Microchip">
-            <input value={data.profile.microchip} onChange={(event) => updateProfile("microchip", event.target.value)} className="input" />
+            <input
+              value={draftProfile.microchip}
+              onChange={(event) => updateProfile("microchip", event.target.value)}
+              disabled={!isEditing}
+              className="input"
+            />
           </Field>
           <Field label="Insurance">
-            <input value={data.profile.insurance} onChange={(event) => updateProfile("insurance", event.target.value)} className="input" />
+            <input
+              value={draftProfile.insurance}
+              onChange={(event) => updateProfile("insurance", event.target.value)}
+              disabled={!isEditing}
+              className="input"
+            />
           </Field>
         </div>
       </Panel>
@@ -1833,22 +2057,25 @@ function ProfileView({
         <div className="mt-5 grid gap-4">
           <Field label="Allergies">
             <textarea
-              value={data.profile.allergies.join("\n")}
+              value={draftProfile.allergies.join("\n")}
               onChange={(event) => updateList("allergies", event.target.value)}
+              disabled={!isEditing}
               className="input min-h-24"
             />
           </Field>
           <Field label="Conditions">
             <textarea
-              value={data.profile.conditions.join("\n")}
+              value={draftProfile.conditions.join("\n")}
               onChange={(event) => updateList("conditions", event.target.value)}
+              disabled={!isEditing}
               className="input min-h-24"
             />
           </Field>
           <Field label="Care instructions">
             <textarea
-              value={data.profile.careInstructions.join("\n")}
+              value={draftProfile.careInstructions.join("\n")}
               onChange={(event) => updateList("careInstructions", event.target.value)}
+              disabled={!isEditing}
               className="input min-h-28"
             />
           </Field>
@@ -1858,40 +2085,81 @@ function ProfileView({
       <Panel className="lg:col-span-2">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <SectionTitle icon={Stethoscope} title="Vet contacts" />
-          <ActionButton icon={Plus} label="Add contact" onClick={addVet} variant="secondary" />
+          {isEditing && <ActionButton icon={Plus} label="Add contact" onClick={addVet} variant="secondary" />}
         </div>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          {data.profile.vets.map((vet) => (
+          {draftProfile.vets.map((vet) => (
             <div key={vet.id} className="rounded-lg border border-ink/10 bg-white/70 p-4">
+              {isEditing && (
+                <div className="mb-4 flex justify-end">
+                  <ActionButton icon={Trash2} label="Delete contact" onClick={() => removeVet(vet)} variant="danger" />
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Clinic">
-                  <input value={vet.clinic} onChange={(event) => updateVet(vet.id, "clinic", event.target.value)} className="input" />
+                  <input
+                    value={vet.clinic}
+                    onChange={(event) => updateVet(vet.id, "clinic", event.target.value)}
+                    disabled={!isEditing}
+                    className="input"
+                  />
                 </Field>
                 <Field label="Clinician">
-                  <input value={vet.clinician} onChange={(event) => updateVet(vet.id, "clinician", event.target.value)} className="input" />
+                  <input
+                    value={vet.clinician}
+                    onChange={(event) => updateVet(vet.id, "clinician", event.target.value)}
+                    disabled={!isEditing}
+                    className="input"
+                  />
                 </Field>
                 <Field label="Role">
-                  <input value={vet.role} onChange={(event) => updateVet(vet.id, "role", event.target.value)} className="input" />
+                  <input
+                    value={vet.role}
+                    onChange={(event) => updateVet(vet.id, "role", event.target.value)}
+                    disabled={!isEditing}
+                    className="input"
+                  />
                 </Field>
                 <Field label="Phone">
-                  <input value={vet.phone} onChange={(event) => updateVet(vet.id, "phone", event.target.value)} className="input" />
+                  <input
+                    value={vet.phone}
+                    onChange={(event) => updateVet(vet.id, "phone", event.target.value)}
+                    disabled={!isEditing}
+                    className="input"
+                  />
                 </Field>
                 <Field label="Email">
-                  <input value={vet.email} onChange={(event) => updateVet(vet.id, "email", event.target.value)} className="input" />
+                  <input
+                    value={vet.email}
+                    onChange={(event) => updateVet(vet.id, "email", event.target.value)}
+                    disabled={!isEditing}
+                    className="input"
+                  />
                 </Field>
                 <Field label="After-hours">
                   <input
                     value={vet.afterHours ?? ""}
                     onChange={(event) => updateVet(vet.id, "afterHours", event.target.value)}
+                    disabled={!isEditing}
                     className="input"
                   />
                 </Field>
               </div>
               <Field label="Address">
-                <input value={vet.address} onChange={(event) => updateVet(vet.id, "address", event.target.value)} className="input mt-1" />
+                <input
+                  value={vet.address}
+                  onChange={(event) => updateVet(vet.id, "address", event.target.value)}
+                  disabled={!isEditing}
+                  className="input mt-1"
+                />
               </Field>
             </div>
           ))}
+          {draftProfile.vets.length === 0 && (
+            <div className="rounded-lg border border-dashed border-ink/15 bg-ivory p-4 lg:col-span-2">
+              <EmptyState text="No vet contacts in this draft. Add one before saving if you want vet details in the emergency summary." />
+            </div>
+          )}
         </div>
       </Panel>
     </div>
@@ -1991,6 +2259,35 @@ function MedicationView({
   commit: (updater: (current: PetMemoryData) => PetMemoryData) => void;
 }) {
   const [draft, setDraft] = useState<Medication>(emptyMedication);
+  const [isMedicationListEditing, setIsMedicationListEditing] = useState(false);
+  const [selectedMedicationId, setSelectedMedicationId] = useState<string | null>(null);
+  const [showAddMedicationForm, setShowAddMedicationForm] = useState(false);
+  const medicationSortTime = (medication: Medication) => {
+    const timestamp = new Date(medication.endDate || medication.startDate).getTime();
+    return Number.isNaN(timestamp) ? 0 : timestamp;
+  };
+  const sortMedicationByDateDesc = (a: Medication, b: Medication) => medicationSortTime(b) - medicationSortTime(a);
+  const currentMedications = [...data.medications]
+    .filter((medication) => medication.status !== "Ended")
+    .sort(sortMedicationByDateDesc);
+  const endedMedications = [...data.medications]
+    .filter((medication) => medication.status === "Ended")
+    .sort(sortMedicationByDateDesc);
+
+  const resetMedicationForm = () => {
+    setDraft(emptyMedication());
+  };
+
+  const openAddMedicationForm = () => {
+    setIsMedicationListEditing(false);
+    setSelectedMedicationId(null);
+    setShowAddMedicationForm(true);
+  };
+
+  const closeAddMedicationForm = () => {
+    resetMedicationForm();
+    setShowAddMedicationForm(false);
+  };
 
   const submit = () => {
     if (!draft.name.trim() || !draft.dosage.trim()) return;
@@ -1998,86 +2295,328 @@ function MedicationView({
       ...current,
       medications: [{ ...draft, id: newId("med") }, ...current.medications]
     }));
-    setDraft(emptyMedication());
+    resetMedicationForm();
+    setShowAddMedicationForm(false);
+  };
+
+  const updateMedication = <K extends keyof Medication>(id: string, field: K, value: Medication[K]) => {
+    commit((current) => ({
+      ...current,
+      medications: current.medications.map((medication) => (medication.id === id ? { ...medication, [field]: value } : medication))
+    }));
+  };
+
+  const deleteMedication = (medication: Medication) => {
+    if (!window.confirm(`Are you sure you want to delete ${medication.name}? This removes it from this pet's medication tracker.`)) return;
+    commit((current) => ({
+      ...current,
+      medications: current.medications.filter((item) => item.id !== medication.id)
+    }));
+    if (selectedMedicationId === medication.id) {
+      setSelectedMedicationId(null);
+    }
+  };
+
+  const toggleMedicationListEditing = () => {
+    if (isMedicationListEditing) {
+      setSelectedMedicationId(null);
+    }
+    setIsMedicationListEditing((current) => !current);
   };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+    <div className="mx-auto max-w-4xl space-y-5">
       <Panel>
-        <SectionTitle icon={Pill} title="Add medication" />
-        <div className="mt-5 grid gap-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Medication">
-              <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="input" />
-            </Field>
-            <Field label="Dosage">
-              <input value={draft.dosage} onChange={(event) => setDraft({ ...draft, dosage: event.target.value })} className="input" />
-            </Field>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <SectionTitle icon={ClipboardList} title="Medication tracker" />
+            {isMedicationListEditing && (
+              <p className="mt-3 text-sm leading-6 text-muted">
+                Choose a medication to edit. Changes save automatically. Use X only for mistakes.
+              </p>
+            )}
           </div>
-          <Field label="Frequency">
-            <input value={draft.frequency} onChange={(event) => setDraft({ ...draft, frequency: event.target.value })} className="input" />
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Start">
-              <input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} className="input" />
-            </Field>
-            <Field label="End">
-              <input type="date" value={draft.endDate ?? ""} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} className="input" />
-            </Field>
-            <Field label="Status">
-              <select
-                value={draft.status}
-                onChange={(event) => setDraft({ ...draft, status: event.target.value as Medication["status"] })}
-                className="input"
-              >
-                <option>Active</option>
-                <option>Paused</option>
-                <option>Ended</option>
-              </select>
-            </Field>
-          </div>
-          <Field label="Refill notes">
-            <textarea
-              value={draft.refillNotes}
-              onChange={(event) => setDraft({ ...draft, refillNotes: event.target.value })}
-              className="input min-h-20"
+          <ActionButton
+            icon={isMedicationListEditing ? CheckCircle2 : Pencil}
+            label={isMedicationListEditing ? "Done" : "Edit list"}
+            onClick={toggleMedicationListEditing}
+            variant="secondary"
+          />
+        </div>
+        <div className="mt-5 space-y-6">
+          {data.medications.length === 0 && <EmptyState text="No medications yet." />}
+
+          {currentMedications.length > 0 && (
+            <MedicationGroup
+              title="Active medications"
+              medications={currentMedications}
+              isEditing={isMedicationListEditing}
+              selectedMedicationId={selectedMedicationId}
+              onSelect={setSelectedMedicationId}
+              onUpdate={updateMedication}
+              onDelete={deleteMedication}
             />
-          </Field>
-          <Field label="Vet note">
-            <textarea value={draft.vetNote ?? ""} onChange={(event) => setDraft({ ...draft, vetNote: event.target.value })} className="input min-h-20" />
-          </Field>
-          <ActionButton icon={Plus} label="Save medication" onClick={submit} />
+          )}
+
+          {endedMedications.length > 0 && (
+            <MedicationGroup
+              title="Ended medications"
+              medications={endedMedications}
+              isEditing={isMedicationListEditing}
+              selectedMedicationId={selectedMedicationId}
+              onSelect={setSelectedMedicationId}
+              onUpdate={updateMedication}
+              onDelete={deleteMedication}
+            />
+          )}
+
+          <div className="border-t border-ink/10 pt-5">
+            {showAddMedicationForm ? (
+              <div className="rounded-lg border border-pine/20 bg-mist/60 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <SectionTitle icon={Pill} title="Add medication" />
+                    <p className="mt-3 text-sm leading-6 text-muted">
+                      Add a new medication to this pet's tracker.
+                    </p>
+                  </div>
+                  <ActionButton icon={X} label="Cancel" onClick={closeAddMedicationForm} variant="secondary" />
+                </div>
+                <div className="mt-5 grid gap-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Medication">
+                      <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="input" />
+                    </Field>
+                    <Field label="Dosage">
+                      <input value={draft.dosage} onChange={(event) => setDraft({ ...draft, dosage: event.target.value })} className="input" />
+                    </Field>
+                  </div>
+                  <Field label="Frequency">
+                    <input value={draft.frequency} onChange={(event) => setDraft({ ...draft, frequency: event.target.value })} className="input" />
+                  </Field>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <Field label="Start">
+                      <input
+                        type="date"
+                        value={draft.startDate}
+                        onChange={(event) => setDraft({ ...draft, startDate: event.target.value })}
+                        className="input"
+                      />
+                    </Field>
+                    <Field label="End">
+                      <input
+                        type="date"
+                        value={draft.endDate ?? ""}
+                        onChange={(event) => setDraft({ ...draft, endDate: event.target.value })}
+                        className="input"
+                      />
+                    </Field>
+                    <Field label="Status">
+                      <select
+                        value={draft.status}
+                        onChange={(event) => setDraft({ ...draft, status: event.target.value as Medication["status"] })}
+                        className="input"
+                      >
+                        <option>Active</option>
+                        <option>Paused</option>
+                        <option>Ended</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <Field label="Refill notes">
+                    <textarea
+                      value={draft.refillNotes}
+                      onChange={(event) => setDraft({ ...draft, refillNotes: event.target.value })}
+                      className="input min-h-20"
+                    />
+                  </Field>
+                  <Field label="Vet note">
+                    <textarea
+                      value={draft.vetNote ?? ""}
+                      onChange={(event) => setDraft({ ...draft, vetNote: event.target.value })}
+                      className="input min-h-20"
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <ActionButton icon={Plus} label="Save medication" onClick={submit} />
+                    <ActionButton icon={X} label="Cancel" onClick={closeAddMedicationForm} variant="secondary" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={openAddMedicationForm}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-pine/15 bg-mist px-4 py-2 text-sm font-semibold text-pine transition hover:border-pine/35 hover:bg-sage/30"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add medication
+              </button>
+            )}
+          </div>
         </div>
       </Panel>
+    </div>
+  );
+}
 
-      <Panel>
-        <SectionTitle icon={ClipboardList} title="Medication tracker" />
-        <div className="mt-5 grid gap-3">
-          {data.medications.map((medication) => (
-            <div key={medication.id} className="rounded-lg border border-ink/10 bg-white/75 p-4">
+function MedicationGroup({
+  title,
+  medications,
+  isEditing,
+  selectedMedicationId,
+  onSelect,
+  onUpdate,
+  onDelete
+}: {
+  title: string;
+  medications: Medication[];
+  isEditing: boolean;
+  selectedMedicationId: string | null;
+  onSelect: (id: string | null) => void;
+  onUpdate: <K extends keyof Medication>(id: string, field: K, value: Medication[K]) => void;
+  onDelete: (medication: Medication) => void;
+}) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold uppercase tracking-normal text-muted">{title}</h3>
+        <span className="rounded-lg bg-oat px-2 py-1 text-xs font-semibold text-muted">{medications.length}</span>
+      </div>
+      <div className="grid gap-3">
+        {medications.map((medication) => {
+          const selected = selectedMedicationId === medication.id;
+          return (
+            <article
+              key={medication.id}
+              className={`rounded-lg border bg-white/75 p-4 transition ${
+                selected ? "border-pine bg-mist/70 shadow-soft" : isEditing ? "border-pine/20 bg-white" : "border-ink/10"
+              }`}
+            >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-base font-semibold text-ink">{medication.name}</h3>
+                    <h4 className="text-base font-semibold text-ink">{medication.name}</h4>
                     <StatusPill label={medication.status} />
+                    {selected && <span className="rounded-lg bg-pine px-2 py-1 text-xs font-semibold text-white">Editing</span>}
                   </div>
                   <p className="mt-1 text-sm text-muted">
                     {medication.dosage} · {medication.frequency}
                   </p>
                 </div>
-                <p className="text-sm font-medium text-muted">
-                  {formatDate(medication.startDate)} {medication.endDate ? `to ${formatDate(medication.endDate)}` : ""}
-                </p>
+                <div className="flex shrink-0 items-start justify-between gap-2 sm:justify-end">
+                  <p className="text-sm font-medium text-muted">
+                    {formatDate(medication.startDate)} {medication.endDate ? `to ${formatDate(medication.endDate)}` : ""}
+                  </p>
+                  {isEditing && (
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onSelect(selected ? null : medication.id)}
+                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition ${
+                          selected
+                            ? "border-pine bg-pine text-white"
+                            : "border-ink/10 bg-white text-ink hover:border-pine/40 hover:bg-mist"
+                        }`}
+                        aria-label={selected ? `Close ${medication.name} editor` : `Edit ${medication.name}`}
+                        title={selected ? `Close ${medication.name} editor` : `Edit ${medication.name}`}
+                      >
+                        {selected ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <Pencil className="h-4 w-4" aria-hidden="true" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(medication);
+                        }}
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-coral/20 bg-coral/10 text-coral transition hover:border-coral hover:bg-coral hover:text-white"
+                        aria-label={`Delete ${medication.name}`}
+                        title={`Delete ${medication.name}`}
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
-                <Definition label="Refill" value={medication.refillNotes || "Not set"} />
-                <Definition label="Vet note" value={medication.vetNote || "Not set"} />
+                {selected ? (
+                  <>
+                    <Field label="Medication">
+                      <input
+                        value={medication.name}
+                        onChange={(event) => onUpdate(medication.id, "name", event.target.value)}
+                        className="input"
+                      />
+                    </Field>
+                    <Field label="Dosage">
+                      <input
+                        value={medication.dosage}
+                        onChange={(event) => onUpdate(medication.id, "dosage", event.target.value)}
+                        className="input"
+                      />
+                    </Field>
+                    <Field label="Frequency">
+                      <input
+                        value={medication.frequency}
+                        onChange={(event) => onUpdate(medication.id, "frequency", event.target.value)}
+                        className="input"
+                      />
+                    </Field>
+                    <Field label="Status">
+                      <select
+                        value={medication.status}
+                        onChange={(event) => onUpdate(medication.id, "status", event.target.value as Medication["status"])}
+                        className="input"
+                      >
+                        <option>Active</option>
+                        <option>Paused</option>
+                        <option>Ended</option>
+                      </select>
+                    </Field>
+                    <Field label="Start">
+                      <input
+                        type="date"
+                        value={medication.startDate}
+                        onChange={(event) => onUpdate(medication.id, "startDate", event.target.value)}
+                        className="input"
+                      />
+                    </Field>
+                    <Field label="End">
+                      <input
+                        type="date"
+                        value={medication.endDate ?? ""}
+                        onChange={(event) => onUpdate(medication.id, "endDate", event.target.value || undefined)}
+                        className="input"
+                      />
+                    </Field>
+                    <Field label="Refill notes">
+                      <textarea
+                        value={medication.refillNotes}
+                        onChange={(event) => onUpdate(medication.id, "refillNotes", event.target.value)}
+                        className="input min-h-20"
+                      />
+                    </Field>
+                    <Field label="Vet note">
+                      <textarea
+                        value={medication.vetNote ?? ""}
+                        onChange={(event) => onUpdate(medication.id, "vetNote", event.target.value)}
+                        className="input min-h-20"
+                      />
+                    </Field>
+                  </>
+                ) : (
+                  <>
+                    <Definition label="Refill" value={medication.refillNotes || "Not set"} />
+                    <Definition label="Vet note" value={medication.vetNote || "Not set"} />
+                  </>
+                )}
               </div>
-            </div>
-          ))}
-        </div>
-      </Panel>
-    </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
