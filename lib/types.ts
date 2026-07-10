@@ -1,0 +1,213 @@
+export type Species = "Dog" | "Cat" | "Rabbit" | "Bird" | "Reptile" | "Small mammal" | "Horse" | "Fish" | "Other";
+
+export type VetContact = {
+  id: string;
+  clinic: string;
+  clinician: string;
+  role: string;
+  phone: string;
+  email: string;
+  address: string;
+  afterHours?: string;
+};
+
+export type PetProfile = {
+  name: string;
+  species: Species;
+  customSpecies?: string;
+  breed: string;
+  birthDate: string;
+  sex: string;
+  weightKg: number;
+  microchip: string;
+  insurance: string;
+  allergies: string[];
+  conditions: string[];
+  careInstructions: string[];
+  vets: VetContact[];
+};
+
+export type EventType =
+  | "symptom"
+  | "vet"
+  | "medication"
+  | "physio"
+  | "behavior"
+  | "diet"
+  | "procedure"
+  | "test";
+
+export type HealthEvent = {
+  id: string;
+  type: EventType;
+  date: string;
+  title: string;
+  detail: string;
+  source: string;
+  related?: string;
+  severity?: number;
+  bodyArea?: string;
+  files?: string[];
+};
+
+export type Medication = {
+  id: string;
+  name: string;
+  dosage: string;
+  frequency: string;
+  startDate: string;
+  endDate?: string;
+  status: "Active" | "Paused" | "Ended";
+  refillNotes: string;
+  vetNote?: string;
+};
+
+export type SymptomLog = {
+  id: string;
+  name: string;
+  severity: number;
+  bodyArea: string;
+  dateTime: string;
+  notes: string;
+  files: string[];
+};
+
+export type ExpenseCategory =
+  | "Vet"
+  | "Meds"
+  | "Physio"
+  | "Food"
+  | "Insurance"
+  | "Emergency";
+
+export type Expense = {
+  id: string;
+  date: string;
+  category: ExpenseCategory;
+  vendor: string;
+  amount: number;
+  note: string;
+};
+
+export type WeightPoint = {
+  date: string;
+  kg: number;
+};
+
+export type Reminder = {
+  id: string;
+  title: string;
+  type: "Medication" | "Appointment" | "Follow-up" | "Refill" | "Home care";
+  dueDate: string;
+  done: boolean;
+  notes: string;
+};
+
+export type VetDocument = {
+  id: string;
+  title: string;
+  date: string;
+  type: "Lab" | "Invoice" | "Imaging" | "Discharge" | "Care plan" | "Other";
+  source: string;
+  fileName?: string;
+  notes: string;
+};
+
+export type PreventionStatus = "Done" | "Due soon" | "Overdue" | "Not applicable";
+
+export type PreventionCategory =
+  | "Vaccines"
+  | "Dental care"
+  | "Parasite prevention"
+  | "Bloodwork"
+  | "Weight checks"
+  | "Mobility checks"
+  | "Nutrition review"
+  | "Insurance/admin"
+  | "Custom";
+
+export type PreventionItem = {
+  id: string;
+  title: string;
+  category: PreventionCategory;
+  status: PreventionStatus;
+  nextDueDate?: string;
+  lastDoneDate?: string;
+  notes: string;
+};
+
+export type RoutineCategory =
+  | "Activity"
+  | "Physio"
+  | "Medication"
+  | "Supplements"
+  | "Grooming"
+  | "Rest"
+  | "Enrichment"
+  | "Appetite/hydration"
+  | "Custom";
+
+export type RoutineCadence = "Daily" | "Weekly";
+
+export type HabitRoutine = {
+  id: string;
+  title: string;
+  category: RoutineCategory;
+  cadence: RoutineCadence;
+  targetPerWeek: number;
+  completionDates: string[];
+  notes: string;
+};
+
+export type RiskWatchItem = {
+  id: string;
+  watch: string;
+  whyItMatters: string;
+  lastObserved: string;
+  severity: number;
+  notes: string;
+  relatedTo?: string;
+};
+
+export type QualityOfLifeNote = {
+  id: string;
+  date: string;
+  mobility: number;
+  appetite: number;
+  mood: number;
+  comfort: number;
+  notes: string;
+};
+
+export type PetLongevityData = {
+  prevention: PreventionItem[];
+  routines: HabitRoutine[];
+  watchlist: RiskWatchItem[];
+  qualityOfLifeNotes: QualityOfLifeNote[];
+};
+
+export type PetMemoryData = {
+  id: string;
+  profile: PetProfile;
+  events: HealthEvent[];
+  medications: Medication[];
+  symptoms: SymptomLog[];
+  expenses: Expense[];
+  weights: WeightPoint[];
+  reminders: Reminder[];
+  documents: VetDocument[];
+  longevity: PetLongevityData;
+  updatedAt: string;
+};
+
+export type AppMemoryData = {
+  pets: PetMemoryData[];
+  activePetId: string;
+  updatedAt: string;
+};
+
+export type SummaryResponse = {
+  mode: "local" | "ai";
+  summary: string;
+  questions: string[];
+};

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Pet Health Memory icon">
+  <rect width="512" height="512" rx="108" fill="#245247"/>
+  <circle cx="196" cy="160" r="38" fill="#f6f0e7"/>
+  <circle cx="306" cy="160" r="38" fill="#f6f0e7"/>
+  <circle cx="150" cy="252" r="34" fill="#f6f0e7"/>
+  <circle cx="352" cy="252" r="34" fill="#f6f0e7"/>
+  <path d="M256 226c-67 0-124 53-124 118 0 48 39 82 85 64 17-7 29-13 39-13s22 6 39 13c46 18 85-16 85-64 0-65-57-118-124-118Z" fill="#f6f0e7"/>
+  <path d="M256 292v82M215 333h82" stroke="#d86f57" stroke-width="28" stroke-linecap="round"/>
+</svg>

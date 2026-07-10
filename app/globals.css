@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .input {
+    @apply w-full rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm text-ink shadow-sm transition placeholder:text-muted/70;
+  }
+
+  .input:hover {
+    @apply border-pine/30;
+  }
+}
+
+:root {
+  color-scheme: light;
+  background: #faf7f1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: #172131;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(232, 242, 239, 0.95) 0, rgba(232, 242, 239, 0) 34rem),
+    linear-gradient(180deg, rgba(250, 247, 241, 1) 0%, rgba(247, 250, 249, 1) 52%, rgba(250, 247, 241, 1) 100%),
+    #faf7f1;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(36, 82, 71, 0.28);
+  outline-offset: 2px;
+}
+
+@media print {
+  @page {
+    margin: 0.55in;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-root {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+
+  .emergency-sheet {
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+
+  .avoid-break {
+    break-inside: avoid;
+  }
+}
