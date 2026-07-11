@@ -1124,7 +1124,7 @@ export function PetHealthDashboard() {
         <header className="no-print pb-5">
           <div className="rounded-xl border border-ink/10 bg-white/90 p-4 shadow-soft sm:p-5">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-              <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start">
+              <div className="order-2 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start xl:order-1">
                 <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-pine text-white shadow-soft">
                   <PawPrint className="h-6 w-6" aria-hidden="true" />
                 </div>
@@ -1156,7 +1156,7 @@ export function PetHealthDashboard() {
                   </dl>
                 </div>
               </div>
-            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <div className="order-1 flex w-full flex-wrap items-center justify-between gap-2 sm:justify-start xl:order-2 xl:w-auto xl:justify-end">
               <ActionButton icon={AlertTriangle} label="Emergency summary" onClick={() => requestView("emergency")} disabled={profileSetupRequired} />
               <AppMenu
                 pets={appData.pets}
