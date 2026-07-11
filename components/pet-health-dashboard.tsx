@@ -87,6 +87,8 @@ type ViewId =
 type ViewMeta = { label: string; icon: LucideIcon };
 type TimeRange = 7 | 30 | 90;
 type SyncStatus = "local" | "checking" | "signed-out" | "loading-cloud" | "saving" | "synced" | "conflict" | "error";
+type WeightUnit = "kg" | "lb";
+type ProfileErrorField = "name" | "species" | "breed" | "customBreed" | "birthDate" | "sex" | "weightKg";
 
 const viewMeta: Record<ViewId, ViewMeta> = {
   overview: { label: "Today", icon: Home },
@@ -168,6 +170,251 @@ const categories: ExpenseCategory[] = [
 ];
 
 const speciesOptions: PetProfile["species"][] = ["Dog", "Cat", "Rabbit", "Bird", "Reptile", "Small mammal", "Horse", "Fish", "Other"];
+
+const dogBreedOptions = [
+  "Mixed Breed",
+  "Other",
+  "Golden Retriever mix",
+  "Hound mix",
+  "Labrador Retriever mix",
+  "Poodle mix",
+  "Retriever mix",
+  "Shepherd mix",
+  "Terrier mix",
+  "Affenpinscher",
+  "Afghan Hound",
+  "Airedale Terrier",
+  "Akbash",
+  "Akita",
+  "Alaskan Klee Kai",
+  "Alaskan Malamute",
+  "American Bulldog",
+  "American Bully",
+  "American English Coonhound",
+  "American Eskimo Dog",
+  "American Foxhound",
+  "American Hairless Terrier",
+  "American Leopard Hound",
+  "American Staffordshire Terrier",
+  "American Water Spaniel",
+  "Anatolian Shepherd Dog",
+  "Appenzeller Sennenhund",
+  "Australian Cattle Dog",
+  "Australian Shepherd",
+  "Australian Terrier",
+  "Azawakh",
+  "Basenji",
+  "Basset Hound",
+  "Beagle",
+  "Bearded Collie",
+  "Beauceron",
+  "Bedlington Terrier",
+  "Belgian Malinois",
+  "Belgian Sheepdog",
+  "Belgian Tervuren",
+  "Bernese Mountain Dog",
+  "Bichon Frise",
+  "Biewer Terrier",
+  "Black and Tan Coonhound",
+  "Bloodhound",
+  "Boerboel",
+  "Border Collie",
+  "Border Terrier",
+  "Borzoi",
+  "Boston Terrier",
+  "Bouvier des Flandres",
+  "Boxer",
+  "Boykin Spaniel",
+  "Braque du Bourbonnais",
+  "Braque Francais Pyrenean",
+  "Briard",
+  "Brittany",
+  "Broholmer",
+  "Brussels Griffon",
+  "Bull Terrier",
+  "Bulldog",
+  "Bullmastiff",
+  "Cairn Terrier",
+  "Canaan Dog",
+  "Cane Corso",
+  "Carolina Dog",
+  "Cardigan Welsh Corgi",
+  "Catahoula Leopard Dog",
+  "Caucasian Shepherd Dog",
+  "Cavalier King Charles Spaniel",
+  "Cavapoo",
+  "Central Asian Shepherd Dog",
+  "Cesky Terrier",
+  "Chesapeake Bay Retriever",
+  "Chihuahua",
+  "Chinese Crested",
+  "Chinese Shar-Pei",
+  "Chinook",
+  "Chow Chow",
+  "Cirneco dell'Etna",
+  "Clumber Spaniel",
+  "Cockapoo",
+  "Cocker Spaniel",
+  "Collie",
+  "Coton de Tulear",
+  "Danish-Swedish Farmdog",
+  "Dachshund",
+  "Dalmatian",
+  "Doberman Pinscher",
+  "Dogo Argentino",
+  "Dogue de Bordeaux",
+  "Dutch Shepherd",
+  "English Cocker Spaniel",
+  "English Foxhound",
+  "English Setter",
+  "English Springer Spaniel",
+  "English Toy Spaniel",
+  "Entlebucher Mountain Dog",
+  "Eurasier",
+  "Field Spaniel",
+  "Finnish Lapphund",
+  "Finnish Spitz",
+  "Flat-Coated Retriever",
+  "French Bulldog",
+  "French Spaniel",
+  "German Longhaired Pointer",
+  "German Pinscher",
+  "German Shepherd Dog",
+  "German Shorthaired Pointer",
+  "German Spitz",
+  "German Wirehaired Pointer",
+  "Giant Schnauzer",
+  "Goldendoodle",
+  "Golden Retriever",
+  "Gordon Setter",
+  "Grand Basset Griffon Vendeen",
+  "Great Dane",
+  "Great Pyrenees",
+  "Greater Swiss Mountain Dog",
+  "Greyhound",
+  "Hamiltonstovare",
+  "Hanoverian Scenthound",
+  "Havanese",
+  "Hokkaido",
+  "Ibizan Hound",
+  "Icelandic Sheepdog",
+  "Irish Setter",
+  "Irish Terrier",
+  "Irish Water Spaniel",
+  "Irish Wolfhound",
+  "Italian Greyhound",
+  "Jack Russell Terrier",
+  "Japanese Chin",
+  "Jindo",
+  "Kai Ken",
+  "Karelian Bear Dog",
+  "Keeshond",
+  "Kerry Blue Terrier",
+  "Kishu Ken",
+  "Komondor",
+  "Kuvasz",
+  "Labradoodle",
+  "Labrador Retriever",
+  "Lagotto Romagnolo",
+  "Lakeland Terrier",
+  "Lancashire Heeler",
+  "Leonberger",
+  "Lhasa Apso",
+  "Lowchen",
+  "Maltese",
+  "Manchester Terrier",
+  "Mastiff",
+  "Miniature American Shepherd",
+  "Miniature Pinscher",
+  "Miniature Schnauzer",
+  "Mudi",
+  "Nederlandse Kooikerhondje",
+  "Neapolitan Mastiff",
+  "Newfoundland",
+  "Norrbottenspets",
+  "Norfolk Terrier",
+  "Norwegian Buhund",
+  "Norwegian Elkhound",
+  "Norwegian Lundehund",
+  "Norwich Terrier",
+  "Nova Scotia Duck Tolling Retriever",
+  "Old English Sheepdog",
+  "Otterhound",
+  "Papillon",
+  "Parson Russell Terrier",
+  "Pekingese",
+  "Pembroke Welsh Corgi",
+  "Peruvian Inca Orchid",
+  "Petit Basset Griffon Vendeen",
+  "Pharaoh Hound",
+  "Plott Hound",
+  "Polish Lowland Sheepdog",
+  "Pointer",
+  "Pomeranian",
+  "Pomsky",
+  "Poodle",
+  "Portuguese Podengo",
+  "Portuguese Podengo Pequeno",
+  "Portuguese Water Dog",
+  "Presa Canario",
+  "Pug",
+  "Puli",
+  "Pumi",
+  "Pyrenean Mastiff",
+  "Pyrenean Shepherd",
+  "Rat Terrier",
+  "Redbone Coonhound",
+  "Rhodesian Ridgeback",
+  "Rottweiler",
+  "Russell Terrier",
+  "Saint Bernard",
+  "Saluki",
+  "Samoyed",
+  "Schipperke",
+  "Schapendoes",
+  "Scottish Deerhound",
+  "Scottish Terrier",
+  "Sealyham Terrier",
+  "Shetland Sheepdog",
+  "Shiba Inu",
+  "Shikoku",
+  "Shih Tzu",
+  "Siberian Husky",
+  "Silky Terrier",
+  "Skye Terrier",
+  "Smooth Fox Terrier",
+  "Soft Coated Wheaten Terrier",
+  "Spanish Mastiff",
+  "Spanish Water Dog",
+  "Spinone Italiano",
+  "Staffordshire Bull Terrier",
+  "Standard Schnauzer",
+  "Sussex Spaniel",
+  "Swedish Vallhund",
+  "Thai Ridgeback",
+  "Tibetan Mastiff",
+  "Tibetan Spaniel",
+  "Tibetan Terrier",
+  "Tosa",
+  "Toy Fox Terrier",
+  "Transylvanian Hound",
+  "Treeing Walker Coonhound",
+  "Vizsla",
+  "Weimaraner",
+  "Welsh Springer Spaniel",
+  "Welsh Terrier",
+  "West Highland White Terrier",
+  "Whippet",
+  "Wire Fox Terrier",
+  "Wirehaired Pointing Griffon",
+  "Wirehaired Vizsla",
+  "Working Kelpie",
+  "Xoloitzcuintli",
+  "Yakutian Laika",
+  "Yorkshire Terrier"
+];
+
+const KG_PER_LB = 0.45359237;
 
 const categoryTone: Record<ExpenseCategory, string> = {
   Vet: "bg-clinical",
@@ -263,6 +510,55 @@ const cloneProfile = (profile: PetProfile): PetProfile => ({
   careInstructions: [...profile.careInstructions],
   vets: profile.vets.map((vet) => ({ ...vet }))
 });
+
+const validateProfile = (profile: PetProfile): Partial<Record<ProfileErrorField, string>> => {
+  const errors: Partial<Record<ProfileErrorField, string>> = {};
+
+  if (!profile.name.trim()) errors.name = "Name is required.";
+  if (!profile.species) errors.species = "Species is required.";
+  if (!profile.breed.trim()) {
+    errors.breed = "Breed or type is required.";
+  } else if (profile.species === "Dog") {
+    if (!dogBreedOptions.includes(profile.breed.trim())) {
+      errors.breed = "Choose a breed from the list.";
+    } else if (profile.breed.trim() === "Other" && !profile.customBreed?.trim()) {
+      errors.customBreed = "Specify the breed or type.";
+    }
+  }
+  if (!profile.birthDate) {
+    errors.birthDate = "Birth date is required.";
+  } else if (Number.isNaN(new Date(profile.birthDate).getTime())) {
+    errors.birthDate = "Use a valid birth date.";
+  }
+  if (!profile.sex.trim()) errors.sex = "Sex is required.";
+  if (!Number.isFinite(profile.weightKg) || profile.weightKg <= 0) errors.weightKg = "Weight is required.";
+
+  return errors;
+};
+
+const hasProfileErrors = (errors: Partial<Record<ProfileErrorField, string>>) => Object.keys(errors).length > 0;
+
+const cleanProfile = (profile: PetProfile): PetProfile => ({
+  ...profile,
+  name: profile.name.trim(),
+  customSpecies: profile.customSpecies?.trim(),
+  breed: profile.breed.trim(),
+  customBreed: profile.customBreed?.trim(),
+  sex: profile.sex.trim(),
+  microchip: profile.microchip.trim(),
+  insurance: profile.insurance.trim()
+});
+
+const kgToLb = (kg: number) => kg / KG_PER_LB;
+const lbToKg = (lb: number) => lb * KG_PER_LB;
+
+const formatWeightInput = (kg: number, unit: WeightUnit) => {
+  if (!Number.isFinite(kg) || kg <= 0) return "";
+  const value = unit === "kg" ? kg : kgToLb(kg);
+  return Number(value.toFixed(1)).toString();
+};
+
+const formatWeightKg = (kg: number) => (Number.isFinite(kg) && kg > 0 ? `${kg.toFixed(1)} kg` : "Weight not set");
 
 const emptyReminder = (): Reminder => ({
   id: "",
@@ -378,11 +674,12 @@ function createBlankPetMemory(): PetMemoryData {
     id: newId("pet"),
     profile: {
       ...seedData.profile,
-      name: "New pet",
-      species: "Other",
+      name: "",
+      species: "Dog",
       customSpecies: "",
       breed: "",
-      birthDate: todayInput(),
+      customBreed: "",
+      birthDate: "",
       sex: "",
       weightKg: 0,
       microchip: "",
@@ -441,6 +738,7 @@ export function PetHealthDashboard() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [profileEditPetId, setProfileEditPetId] = useState<string | null>(null);
   const cloudReadyForUser = useRef<string | null>(null);
   const loadedStoredLocalCopy = useRef(false);
   const skipNextCloudSave = useRef(false);
@@ -616,6 +914,7 @@ export function PetHealthDashboard() {
       activePetId: pet.id,
       updatedAt
     }));
+    setProfileEditPetId(pet.id);
     setActiveView("profile");
   };
 
@@ -783,8 +1082,25 @@ export function PetHealthDashboard() {
   };
 
   const metrics = useMemo(() => buildMetrics(data), [data]);
-  const ActiveIcon = viewMeta[activeView].icon;
-  const showMoreToolsNav = activeView === "more" || moreToolIds.includes(activeView);
+  const profileSetupRequired = useMemo(() => hasProfileErrors(validateProfile(data.profile)), [data.profile]);
+  const currentView: ViewId = profileSetupRequired ? "profile" : activeView;
+  const ActiveIcon = viewMeta[currentView].icon;
+  const showMoreToolsNav = currentView === "more" || moreToolIds.includes(currentView);
+
+  useEffect(() => {
+    if (!ready || !profileSetupRequired) return;
+    setActiveView("profile");
+    setProfileEditPetId(data.id);
+  }, [data.id, profileSetupRequired, ready]);
+
+  const requestView = (view: ViewId) => {
+    if (profileSetupRequired && view !== "profile") {
+      setActiveView("profile");
+      setProfileEditPetId(data.id);
+      return;
+    }
+    setActiveView(view);
+  };
 
   if (isSupabaseConfigured && !user) {
     return (
@@ -823,7 +1139,7 @@ export function PetHealthDashboard() {
                   </div>
                   <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-2">
                     <h1 className="text-3xl font-semibold leading-none tracking-normal text-ink sm:text-4xl">
-                      {data.profile.name}
+                      {data.profile.name || "New pet"}
                     </h1>
                     <span className="mb-1 rounded-lg border border-pine/15 bg-pine/5 px-2.5 py-1 text-sm font-semibold text-pine">
                       Care dashboard
@@ -834,14 +1150,14 @@ export function PetHealthDashboard() {
                   </p>
                   <dl className="mt-4 grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
                     <PetFact label="Species" value={displaySpecies(data.profile)} />
-                    <PetFact label="Breed" value={data.profile.breed || "Type not set"} />
+                    <PetFact label="Breed" value={displayBreed(data.profile)} />
                     <PetFact label="Age" value={getAge(data.profile.birthDate)} />
-                    <PetFact label="Weight" value={`${data.profile.weightKg.toFixed(1)} kg`} />
+                    <PetFact label="Weight" value={formatWeightKg(data.profile.weightKg)} />
                   </dl>
                 </div>
               </div>
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              <ActionButton icon={AlertTriangle} label="Emergency summary" onClick={() => setActiveView("emergency")} />
+              <ActionButton icon={AlertTriangle} label="Emergency summary" onClick={() => requestView("emergency")} disabled={profileSetupRequired} />
               <AppMenu
                 pets={appData.pets}
                 activePetId={data.id}
@@ -869,16 +1185,20 @@ export function PetHealthDashboard() {
           <nav className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Dashboard views">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const selected = item.id === activeView || (item.id === "more" && !primaryNavIds.includes(activeView));
+              const selected = item.id === currentView || (item.id === "more" && !primaryNavIds.includes(currentView));
+              const disabled = profileSetupRequired;
               return (
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setActiveView(item.id)}
+                  onClick={() => requestView(item.id)}
+                  disabled={disabled}
                   className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
                     selected
                       ? "border-pine bg-pine text-white shadow-soft"
-                      : "border-ink/10 bg-white/80 text-ink hover:border-pine/40 hover:bg-white"
+                      : disabled
+                        ? "border-ink/10 bg-white/50 text-muted/60"
+                        : "border-ink/10 bg-white/80 text-ink hover:border-pine/40 hover:bg-white"
                   }`}
                 >
                   <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -891,16 +1211,20 @@ export function PetHealthDashboard() {
           {showMoreToolsNav && (
             <nav className="mt-3 flex gap-2 overflow-x-auto rounded-xl border border-ink/10 bg-white/70 p-2" aria-label="More tools">
               {moreToolItems.map((item) => {
-                const selected = item.view === activeView;
+                const selected = item.view === currentView;
+                const disabled = profileSetupRequired && item.view !== "profile";
                 return (
                   <button
                     key={item.view}
                     type="button"
-                    onClick={() => setActiveView(item.view)}
+                    onClick={() => requestView(item.view)}
+                    disabled={disabled}
                     className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
                       selected
                         ? "border-pine bg-pine text-white shadow-sm"
-                        : "border-transparent bg-ivory text-muted hover:border-pine/20 hover:bg-white hover:text-ink"
+                        : disabled
+                          ? "border-transparent bg-ivory/60 text-muted/50"
+                          : "border-transparent bg-ivory text-muted hover:border-pine/20 hover:bg-white hover:text-ink"
                     }`}
                   >
                     {item.title}
@@ -914,23 +1238,38 @@ export function PetHealthDashboard() {
         <main className="mt-6">
           <div className="no-print mb-4 flex items-center gap-2 text-sm font-semibold text-muted">
             <ActiveIcon className="h-4 w-4" aria-hidden="true" />
-            <span>{viewMeta[activeView].label}</span>
+            <span>{viewMeta[currentView].label}</span>
           </div>
 
-          {activeView === "overview" && (
-            <OverviewView data={data} metrics={metrics} commit={commit} setActiveView={setActiveView} />
+          {profileSetupRequired && (
+            <div className="no-print mb-5 rounded-lg border border-amber/20 bg-amber/10 p-4 text-sm leading-6 text-ink">
+              <p className="font-semibold">Finish this pet profile to unlock the care dashboard.</p>
+              <p className="mt-1 text-muted">Name, species, breed/type, birth date, sex, and weight are required so the health memory and vet summary start from a reliable record.</p>
+            </div>
           )}
-          {activeView === "care" && <CarePlanView data={data} metrics={metrics} commit={commit} setActiveView={setActiveView} />}
-          {activeView === "more" && <MoreView data={data} metrics={metrics} setActiveView={setActiveView} />}
-          {activeView === "profile" && <ProfileView data={data} commit={commit} />}
-          {activeView === "timeline" && <TimelineView data={data} commit={commit} />}
-          {activeView === "meds" && <MedicationView data={data} commit={commit} />}
-          {activeView === "symptoms" && <SymptomView data={data} commit={commit} />}
-          {activeView === "expenses" && <ExpenseView data={data} commit={commit} />}
-          {activeView === "trends" && <TrendsView data={data} metrics={metrics} commit={commit} />}
-          {activeView === "longevity" && <LongevityView data={data} metrics={metrics} commit={commit} />}
-          {activeView === "recent" && <RecentView data={data} />}
-          {activeView === "emergency" && <EmergencyView data={data} />}
+
+          {currentView === "overview" && (
+            <OverviewView data={data} metrics={metrics} commit={commit} setActiveView={requestView} />
+          )}
+          {currentView === "care" && <CarePlanView data={data} metrics={metrics} commit={commit} setActiveView={requestView} />}
+          {currentView === "more" && <MoreView data={data} metrics={metrics} setActiveView={requestView} />}
+          {currentView === "profile" && (
+            <ProfileView
+              data={data}
+              commit={commit}
+              startInEditMode={profileSetupRequired || profileEditPetId === data.id}
+              setupRequired={profileSetupRequired}
+              onStartInEditModeConsumed={() => setProfileEditPetId(null)}
+            />
+          )}
+          {currentView === "timeline" && <TimelineView data={data} commit={commit} />}
+          {currentView === "meds" && <MedicationView data={data} commit={commit} />}
+          {currentView === "symptoms" && <SymptomView data={data} commit={commit} />}
+          {currentView === "expenses" && <ExpenseView data={data} commit={commit} />}
+          {currentView === "trends" && <TrendsView data={data} metrics={metrics} commit={commit} />}
+          {currentView === "longevity" && <LongevityView data={data} metrics={metrics} commit={commit} />}
+          {currentView === "recent" && <RecentView data={data} />}
+          {currentView === "emergency" && <EmergencyView data={data} />}
         </main>
       </div>
     </div>
@@ -977,31 +1316,69 @@ function AppMenu({
   onSyncNow: () => void;
   onDeleteData: () => void;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const Icon = configured ? Cloud : CloudOff;
   const label = syncStatusLabel(syncStatus);
   const statusClass = syncStatusTone(syncStatus);
   const email = user?.email ?? "Account";
   const activePet = pets.find((pet) => pet.id === activePetId) ?? pets[0];
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const runAndClose = (action: () => void) => {
+    setIsOpen(false);
+    action();
+  };
+
   return (
-    <details className="group relative">
-      <summary
-        className="inline-flex min-h-10 cursor-pointer list-none items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40 hover:bg-mist"
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        aria-expanded={isOpen}
         aria-label="Open app menu"
+        className="inline-flex min-h-10 cursor-pointer list-none items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40 hover:bg-mist"
       >
         <Menu className="h-4 w-4" aria-hidden="true" />
         <span>Menu</span>
-        <ChevronDown className="h-4 w-4 text-muted transition group-open:rotate-180" aria-hidden="true" />
-      </summary>
+        <ChevronDown className={`h-4 w-4 text-muted transition ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
 
-      <div className="z-20 mt-2 rounded-lg border border-ink/10 bg-white p-4 shadow-soft sm:absolute sm:right-0 sm:w-[28rem]">
+      {isOpen && <div className="z-20 mt-2 rounded-lg border border-ink/10 bg-white p-4 shadow-soft sm:absolute sm:right-0 sm:w-[28rem]">
         <div className="space-y-5">
           <section>
             <p className="text-xs font-semibold uppercase tracking-normal text-muted">Pet household</p>
             <div className="mt-3 rounded-lg border border-ink/10 bg-ivory p-3">
               <label className="grid gap-2 text-sm font-semibold text-ink">
                 Active pet
-                <select value={activePetId} onChange={(event) => onPetChange(event.target.value)} className="input">
+                <select
+                  value={activePetId}
+                  onChange={(event) => {
+                    onPetChange(event.target.value);
+                    setIsOpen(false);
+                  }}
+                  className="input"
+                >
                   {pets.map((pet) => (
                     <option key={pet.id} value={pet.id}>
                       {pet.profile.name || "Unnamed pet"} · {displaySpecies(pet.profile)}
@@ -1010,12 +1387,12 @@ function AppMenu({
                 </select>
               </label>
               <p className="mt-2 text-xs leading-5 text-muted">
-                {activePet?.profile.breed || "Species details not set"} · {activePet ? getAge(activePet.profile.birthDate) : "Age not set"}
+                {activePet ? displayBreed(activePet.profile) : "Species details not set"} · {activePet ? getAge(activePet.profile.birthDate) : "Age not set"}
               </p>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <ActionButton icon={Plus} label="Add pet" onClick={onAddPet} variant="secondary" />
+                <ActionButton icon={Plus} label="Add pet" onClick={() => runAndClose(onAddPet)} variant="secondary" />
                 {pets.length > 1 ? (
-                  <ActionButton icon={Trash2} label="Remove pet" onClick={onRemovePet} variant="danger" />
+                  <ActionButton icon={Trash2} label="Remove pet" onClick={() => runAndClose(onRemovePet)} variant="danger" />
                 ) : (
                   <button
                     type="button"
@@ -1055,9 +1432,9 @@ function AppMenu({
               <div className="mt-3 grid gap-2">
                 {configured && user ? (
                   <>
-                    <ActionButton icon={RefreshCcw} label="Sync now" onClick={onSyncNow} variant="secondary" />
-                    <ActionButton icon={LogOut} label="Sign out + clear this browser" onClick={onSignOut} variant="danger" />
-                    <ActionButton icon={Trash2} label="Delete synced data" onClick={onDeleteData} variant="danger" />
+                    <ActionButton icon={RefreshCcw} label="Sync now" onClick={() => runAndClose(onSyncNow)} variant="secondary" />
+                    <ActionButton icon={LogOut} label="Sign out + clear this browser" onClick={() => runAndClose(onSignOut)} variant="danger" />
+                    <ActionButton icon={Trash2} label="Delete synced data" onClick={() => runAndClose(onDeleteData)} variant="danger" />
                   </>
                 ) : (
                   <>
@@ -1081,13 +1458,13 @@ function AppMenu({
           <section>
             <p className="text-xs font-semibold uppercase tracking-normal text-muted">Data</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <ActionButton icon={Download} label="Export JSON" onClick={onExportJson} variant="secondary" />
-              {!user && <ActionButton icon={RefreshCcw} label="Reset sample" onClick={onResetSample} variant="secondary" />}
+              <ActionButton icon={Download} label="Export JSON" onClick={() => runAndClose(onExportJson)} variant="secondary" />
+              {!user && <ActionButton icon={RefreshCcw} label="Reset sample" onClick={() => runAndClose(onResetSample)} variant="secondary" />}
             </div>
           </section>
         </div>
-      </div>
-    </details>
+      </div>}
+    </div>
   );
 }
 
@@ -1856,37 +2233,115 @@ function MoreView({
 
 function ProfileView({
   data,
-  commit
+  commit,
+  startInEditMode = false,
+  setupRequired = false,
+  onStartInEditModeConsumed
 }: {
   data: PetMemoryData;
   commit: (updater: (current: PetMemoryData) => PetMemoryData) => void;
+  startInEditMode?: boolean;
+  setupRequired?: boolean;
+  onStartInEditModeConsumed?: () => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draftProfile, setDraftProfile] = useState<PetProfile>(() => cloneProfile(data.profile));
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>("kg");
+  const [saveAttempted, setSaveAttempted] = useState(false);
+  const [breedSearch, setBreedSearch] = useState(data.profile.breed);
+  const [breedPickerOpen, setBreedPickerOpen] = useState(false);
+  const profileErrors = useMemo(() => validateProfile(draftProfile), [draftProfile]);
+  const profileHasErrors = hasProfileErrors(profileErrors);
+  const showValidation = isEditing && (saveAttempted || profileHasErrors);
+  const filteredDogBreedOptions = useMemo(() => {
+    const search = breedSearch.trim().toLowerCase();
+    const matches = search
+      ? dogBreedOptions.filter((breed) => breed.toLowerCase().includes(search))
+      : dogBreedOptions;
+    return matches.slice(0, 12);
+  }, [breedSearch]);
 
   useEffect(() => {
     if (!isEditing) {
       setDraftProfile(cloneProfile(data.profile));
+      setBreedSearch(data.profile.breed);
+      setBreedPickerOpen(false);
+      setSaveAttempted(false);
     }
   }, [data.id, data.profile, isEditing]);
 
+  useEffect(() => {
+    if (!startInEditMode) return;
+    setDraftProfile(cloneProfile(data.profile));
+    setBreedSearch(data.profile.breed);
+    setBreedPickerOpen(false);
+    setIsEditing(true);
+    setSaveAttempted(false);
+    onStartInEditModeConsumed?.();
+  }, [data.id, startInEditMode]);
+
   const startEditing = () => {
     setDraftProfile(cloneProfile(data.profile));
+    setBreedSearch(data.profile.breed);
+    setBreedPickerOpen(false);
     setIsEditing(true);
+    setSaveAttempted(false);
   };
 
   const cancelEditing = () => {
     setDraftProfile(cloneProfile(data.profile));
+    setBreedSearch(data.profile.breed);
+    setBreedPickerOpen(false);
     setIsEditing(false);
+    setSaveAttempted(false);
   };
 
   const saveProfile = () => {
-    commit((current) => ({ ...current, profile: cloneProfile(draftProfile) }));
+    if (profileHasErrors) {
+      setSaveAttempted(true);
+      return;
+    }
+    commit((current) => ({ ...current, profile: cleanProfile(cloneProfile(draftProfile)) }));
     setIsEditing(false);
+    setSaveAttempted(false);
   };
 
   const updateProfile = <K extends keyof PetProfile>(field: K, value: PetProfile[K]) => {
     setDraftProfile((current) => ({ ...current, [field]: value }));
+  };
+
+  const updateWeight = (value: string) => {
+    if (!value.trim()) {
+      updateProfile("weightKg", 0);
+      return;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    const kg = weightUnit === "kg" ? parsed : lbToKg(parsed);
+    updateProfile("weightKg", Math.round(kg * 10) / 10);
+  };
+
+  const selectDogBreed = (breed: string) => {
+    setDraftProfile((current) => ({
+      ...current,
+      breed,
+      customBreed: breed === "Other" ? current.customBreed ?? "" : ""
+    }));
+    setBreedSearch(breed);
+    setBreedPickerOpen(false);
+  };
+
+  const searchDogBreed = (value: string) => {
+    setBreedSearch(value);
+    setBreedPickerOpen(true);
+    updateProfile("breed", dogBreedOptions.includes(value) ? value : "");
+  };
+
+  const closeDogBreedPicker = () => {
+    window.setTimeout(() => {
+      setBreedPickerOpen(false);
+      setBreedSearch((current) => (dogBreedOptions.includes(current) ? current : draftProfile.breed));
+    }, 120);
   };
 
   const updateList = (field: "allergies" | "conditions" | "careInstructions", value: string) => {
@@ -1939,18 +2394,25 @@ function ProfileView({
       <div className="lg:col-span-2 rounded-lg border border-ink/10 bg-white/85 p-4 shadow-soft">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-ink">{isEditing ? "Editing profile details" : "Profile details are locked"}</p>
-            <p className="mt-1 text-sm leading-6 text-muted">
-              {isEditing
-                ? "Review your changes, then save them to the pet memory."
-                : "Press Edit before changing profile, medical notes, or vet contacts."}
+            <p className="text-sm font-semibold text-ink">
+              {setupRequired ? "Profile setup required" : isEditing ? "Editing profile details" : "Profile details are locked"}
             </p>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              {setupRequired
+                ? "Complete and save the required details before using the rest of the care dashboard."
+                : isEditing
+                  ? "Review your changes, then save them to the pet memory."
+                  : "Press Edit before changing profile, medical notes, or vet contacts."}
+            </p>
+            {showValidation && profileHasErrors && (
+              <p className="mt-2 text-sm font-semibold text-coral">Fill the required profile fields before saving.</p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             {isEditing ? (
               <>
-                <ActionButton icon={X} label="Cancel" onClick={cancelEditing} variant="secondary" />
-                <ActionButton icon={Save} label="Save changes" onClick={saveProfile} />
+                {!setupRequired && <ActionButton icon={X} label="Cancel" onClick={cancelEditing} variant="secondary" />}
+                <ActionButton icon={Save} label="Save changes" onClick={saveProfile} disabled={profileHasErrors} />
               </>
             ) : (
               <ActionButton icon={Pencil} label="Edit" onClick={startEditing} variant="secondary" />
@@ -1961,94 +2423,221 @@ function ProfileView({
 
       <Panel>
         <SectionTitle icon={PawPrint} title="Pet profile" />
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <Field label="Name">
-            <input
-              value={draftProfile.name}
-              onChange={(event) => updateProfile("name", event.target.value)}
-              disabled={!isEditing}
-              className="input"
-            />
-          </Field>
-          <Field label="Species">
-            <select
-              value={draftProfile.species}
-              onChange={(event) => {
-                const species = event.target.value as PetProfile["species"];
-                setDraftProfile((current) => ({
-                  ...current,
-                  species,
-                  customSpecies: species === "Other" ? current.customSpecies ?? "" : current.customSpecies
-                }));
-              }}
-              disabled={!isEditing}
-              className="input"
+        <div className="mt-5 grid gap-4">
+          <div className="grid gap-4 md:grid-cols-2 md:items-start">
+            <Field label="Name" required error={showValidation ? profileErrors.name : undefined}>
+              <input
+                value={draftProfile.name}
+                onChange={(event) => updateProfile("name", event.target.value)}
+                disabled={!isEditing}
+                required
+                aria-invalid={Boolean(profileErrors.name)}
+                className="input"
+              />
+            </Field>
+            <Field label="Species" required error={showValidation ? profileErrors.species : undefined}>
+              <select
+                value={draftProfile.species}
+                onChange={(event) => {
+                  const species = event.target.value as PetProfile["species"];
+                  setDraftProfile((current) => ({
+                    ...current,
+                    species,
+                    breed: species === "Dog" && !dogBreedOptions.includes(current.breed) ? "" : current.breed,
+                    customBreed: species === "Dog" && current.breed === "Other" ? current.customBreed ?? "" : "",
+                    customSpecies: species === "Other" ? current.customSpecies ?? "" : current.customSpecies
+                  }));
+                  if (species === "Dog" && !dogBreedOptions.includes(draftProfile.breed)) {
+                    setBreedSearch("");
+                    setBreedPickerOpen(false);
+                  }
+                }}
+                disabled={!isEditing}
+                required
+                aria-invalid={Boolean(profileErrors.species)}
+                className="input"
+              >
+                {speciesOptions.map((species) => (
+                  <option key={species}>{species}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 md:items-start">
+            <Field label="Species detail">
+              <input
+                value={draftProfile.customSpecies ?? ""}
+                onChange={(event) => updateProfile("customSpecies", event.target.value)}
+                placeholder="e.g. Bearded dragon, ferret, parrot"
+                disabled={!isEditing}
+                className="input"
+              />
+            </Field>
+            <Field
+              label="Breed / type"
+              required
+              error={showValidation ? profileErrors.breed : undefined}
+              helper={draftProfile.species === "Dog" ? "Type to search, then choose a breed from the list. Choose Other if it is not listed." : undefined}
             >
-              {speciesOptions.map((species) => (
-                <option key={species}>{species}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Species detail">
-            <input
-              value={draftProfile.customSpecies ?? ""}
-              onChange={(event) => updateProfile("customSpecies", event.target.value)}
-              placeholder="e.g. Bearded dragon, ferret, parrot"
-              disabled={!isEditing}
-              className="input"
-            />
-          </Field>
-          <Field label="Breed / type">
-            <input
-              value={draftProfile.breed}
-              onChange={(event) => updateProfile("breed", event.target.value)}
-              disabled={!isEditing}
-              className="input"
-            />
-          </Field>
-          <Field label="Birth date">
-            <input
-              type="date"
-              value={draftProfile.birthDate}
-              onChange={(event) => updateProfile("birthDate", event.target.value)}
-              disabled={!isEditing}
-              className="input"
-            />
-          </Field>
-          <Field label="Sex">
-            <input
-              value={draftProfile.sex}
-              onChange={(event) => updateProfile("sex", event.target.value)}
-              disabled={!isEditing}
-              className="input"
-            />
-          </Field>
-          <Field label="Weight kg">
-            <input
-              type="number"
-              step="0.1"
-              value={draftProfile.weightKg}
-              onChange={(event) => updateProfile("weightKg", Number(event.target.value || 0))}
-              disabled={!isEditing}
-              className="input"
-            />
-          </Field>
-          <Field label="Microchip">
-            <input
-              value={draftProfile.microchip}
-              onChange={(event) => updateProfile("microchip", event.target.value)}
-              disabled={!isEditing}
-              className="input"
-            />
-          </Field>
-          <Field label="Insurance">
-            <input
-              value={draftProfile.insurance}
-              onChange={(event) => updateProfile("insurance", event.target.value)}
-              disabled={!isEditing}
-              className="input"
-            />
-          </Field>
+              {draftProfile.species === "Dog" ? (
+                <div className="space-y-3">
+                  <div className="relative">
+                    <input
+                      value={breedSearch}
+                      onChange={(event) => searchDogBreed(event.target.value)}
+                      onFocus={() => isEditing && setBreedPickerOpen(true)}
+                      onBlur={closeDogBreedPicker}
+                      disabled={!isEditing}
+                      required
+                      aria-invalid={Boolean(profileErrors.breed)}
+                      placeholder="Search breed list"
+                      className="input"
+                    />
+                    {isEditing && breedPickerOpen && (
+                      <div className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-ink/10 bg-white p-1 shadow-soft">
+                        {filteredDogBreedOptions.length > 0 ? (
+                          filteredDogBreedOptions.map((breed) => (
+                            <button
+                              key={breed}
+                              type="button"
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                selectDogBreed(breed);
+                              }}
+                              className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition hover:bg-mist ${
+                                draftProfile.breed === breed ? "bg-mist font-semibold text-pine" : "text-ink"
+                              }`}
+                            >
+                              <span>{breed}</span>
+                              {draftProfile.breed === breed && <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+                            </button>
+                          ))
+                        ) : (
+                          <div className="space-y-1">
+                            <p className="px-3 py-2 text-sm text-muted">No listed breed matches that search.</p>
+                            <button
+                              type="button"
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                selectDogBreed("Other");
+                              }}
+                              className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm font-semibold text-pine transition hover:bg-mist"
+                            >
+                              <span>Other</span>
+                              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {draftProfile.breed === "Other" && (
+                    <div className="rounded-lg border border-pine/15 bg-mist/60 p-3">
+                      <Field label="Specify" required error={showValidation ? profileErrors.customBreed : undefined}>
+                        <input
+                          value={draftProfile.customBreed ?? ""}
+                          onChange={(event) => updateProfile("customBreed", event.target.value)}
+                          disabled={!isEditing}
+                          required
+                          aria-invalid={Boolean(profileErrors.customBreed)}
+                          placeholder="e.g. rescue mix, village dog, unknown cross"
+                          className="input bg-white"
+                        />
+                      </Field>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <input
+                  value={draftProfile.breed}
+                  onChange={(event) => updateProfile("breed", event.target.value)}
+                  disabled={!isEditing}
+                  required
+                  aria-invalid={Boolean(profileErrors.breed)}
+                  placeholder="e.g. Holland Lop, cockatiel, bearded dragon"
+                  className="input"
+                />
+              )}
+            </Field>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 md:items-start">
+            <Field label="Birth date" required helper="Approximate if unknown." error={showValidation ? profileErrors.birthDate : undefined}>
+              <input
+                type="date"
+                value={draftProfile.birthDate}
+                onChange={(event) => updateProfile("birthDate", event.target.value)}
+                disabled={!isEditing}
+                required
+                aria-invalid={Boolean(profileErrors.birthDate)}
+                className="input"
+              />
+            </Field>
+            <Field label="Sex" required error={showValidation ? profileErrors.sex : undefined}>
+              <input
+                value={draftProfile.sex}
+                onChange={(event) => updateProfile("sex", event.target.value)}
+                disabled={!isEditing}
+                required
+                aria-invalid={Boolean(profileErrors.sex)}
+                placeholder="e.g. Female, neutered male, unknown"
+                className="input"
+              />
+            </Field>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 md:items-start">
+            <Field label="Weight" required helper="Toggle units to convert the entered weight." error={showValidation ? profileErrors.weightKg : undefined}>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={formatWeightInput(draftProfile.weightKg, weightUnit)}
+                  onChange={(event) => updateWeight(event.target.value)}
+                  disabled={!isEditing}
+                  required
+                  aria-invalid={Boolean(profileErrors.weightKg)}
+                  className="input min-w-0 flex-1"
+                />
+                <div className="inline-flex shrink-0 rounded-lg border border-ink/10 bg-ivory p-1">
+                  {(["kg", "lb"] as WeightUnit[]).map((unit) => (
+                    <button
+                      key={unit}
+                      type="button"
+                      onClick={() => setWeightUnit(unit)}
+                      disabled={!isEditing}
+                      className={`min-h-8 rounded-md px-3 text-xs font-semibold uppercase transition ${
+                        weightUnit === unit ? "bg-pine text-white shadow-sm" : "text-muted hover:bg-white hover:text-ink disabled:hover:bg-transparent"
+                      }`}
+                    >
+                      {unit}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Field>
+            <Field label="Microchip">
+              <input
+                value={draftProfile.microchip}
+                onChange={(event) => updateProfile("microchip", event.target.value)}
+                disabled={!isEditing}
+                className="input"
+              />
+            </Field>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 md:items-start">
+            <Field label="Insurance">
+              <input
+                value={draftProfile.insurance}
+                onChange={(event) => updateProfile("insurance", event.target.value)}
+                disabled={!isEditing}
+                className="input"
+              />
+            </Field>
+          </div>
         </div>
       </Panel>
 
@@ -3473,7 +4062,7 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
           <p className="text-xs font-semibold uppercase tracking-normal text-coral">Emergency veterinary summary</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal text-ink">{data.profile.name}</h2>
           <p className="mt-2 text-sm text-muted">
-            {displaySpecies(data.profile)} · {data.profile.breed || "Type not set"} · {getAge(data.profile.birthDate)} · {data.profile.sex} · {data.profile.weightKg.toFixed(1)} kg
+            {displaySpecies(data.profile)} · {displayBreed(data.profile)} · {getAge(data.profile.birthDate)} · {data.profile.sex || "Sex not set"} · {formatWeightKg(data.profile.weightKg)}
           </p>
         </div>
         <dl className="grid gap-2 text-sm sm:min-w-72">
@@ -3663,12 +4252,29 @@ function InfoBlock({ title, items, danger = false }: { title: string; items: str
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  required = false,
+  helper,
+  error
+}: {
+  label: string;
+  children: React.ReactNode;
+  required?: boolean;
+  helper?: string;
+  error?: string;
+}) {
   return (
-    <label className="grid gap-1 text-sm font-medium text-ink">
-      <span>{label}</span>
+    <div className="grid gap-1 text-sm font-medium text-ink">
+      <span>
+        {label}
+        {required && <span className="ml-1 text-coral" aria-hidden="true">*</span>}
+      </span>
       {children}
-    </label>
+      {helper && <span className="text-xs font-normal leading-5 text-muted">{helper}</span>}
+      {error && <span className="text-xs font-semibold leading-5 text-coral">{error}</span>}
+    </div>
   );
 }
 
@@ -3676,12 +4282,14 @@ function ActionButton({
   icon: Icon,
   label,
   onClick,
-  variant = "primary"
+  variant = "primary",
+  disabled = false
 }: {
   icon: LucideIcon;
   label: string;
   onClick: () => void;
   variant?: "primary" | "secondary" | "danger";
+  disabled?: boolean;
 }) {
   const className =
     variant === "primary"
@@ -3694,7 +4302,8 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${className}`}
+      disabled={disabled}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span>{label}</span>
@@ -4181,7 +4790,7 @@ function downloadEmergencyHtml(data: PetMemoryData) {
 <body>
   <p class="urgent">Emergency veterinary summary</p>
   <h1>${escapeHtml(data.profile.name)}</h1>
-  <p>${escapeHtml(`${displaySpecies(data.profile)} · ${data.profile.breed || "Type not set"} · ${getAge(data.profile.birthDate)} · ${data.profile.weightKg.toFixed(1)} kg`)}</p>
+  <p>${escapeHtml(`${displaySpecies(data.profile)} · ${displayBreed(data.profile)} · ${getAge(data.profile.birthDate)} · ${formatWeightKg(data.profile.weightKg)}`)}</p>
   <section><h2>Allergies</h2><ul>${data.profile.allergies.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>
   <section><h2>Conditions</h2><ul>${data.profile.conditions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>
   <section><h2>Active medications</h2><ul>${activeMeds || "<li>None listed</li>"}</ul></section>
@@ -4240,8 +4849,16 @@ function displaySpecies(profile: PetProfile) {
   return detail || profile.species;
 }
 
+function displayBreed(profile: PetProfile) {
+  if (profile.species === "Dog" && profile.breed === "Other") {
+    return profile.customBreed?.trim() || "Other not specified";
+  }
+  return profile.breed || "Type not set";
+}
+
 function getAge(birthDate: string) {
   const birth = new Date(birthDate);
+  if (!birthDate || Number.isNaN(birth.getTime())) return "Age not set";
   const now = new Date();
   let years = now.getFullYear() - birth.getFullYear();
   const monthDiff = now.getMonth() - birth.getMonth();

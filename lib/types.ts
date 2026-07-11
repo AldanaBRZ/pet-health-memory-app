@@ -16,6 +16,7 @@ export type PetProfile = {
   species: Species;
   customSpecies?: string;
   breed: string;
+  customBreed?: string;
   birthDate: string;
   sex: string;
   weightKg: number;
