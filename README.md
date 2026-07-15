@@ -49,9 +49,11 @@ AI summaries require:
 
 Outputs are framed as observations and questions to discuss with a veterinarian, not medical advice.
 
-## Upload Safety Note
+## Private Files
 
-The current MVP stores document placeholders only. Before enabling real file uploads, use a private Supabase Storage bucket with row-level policies, per-user object paths, file size limits, and an allowlist for expected document/image MIME types.
+Profile photos, symptom photos, and vet documents use the private `pet-health-files` Supabase Storage bucket created by `supabase/schema.sql`. Object paths begin with the signed-in user ID and storage policies only allow that user to read, upload, update, or delete those files. Uploads are restricted to PDF and expected image MIME types, with a 10 MB bucket limit and a stricter 5 MB profile-photo limit in the client.
+
+Without Supabase, file contents are stored in browser IndexedDB and marked as device-only. JSON exports contain attachment metadata, not the private file contents, so they are not a complete media backup.
 
 ## PWA Testing
 

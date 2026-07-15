@@ -563,7 +563,8 @@ export const seedData: PetMemoryData = {
   sectionUpdatedAt: {
     profile: "2026-07-10T10:00:00",
     contacts: "2026-07-10T10:00:00",
-    medications: "2026-07-10T10:00:00"
+    medications: "2026-07-10T10:00:00",
+    documents: "2026-07-10T10:00:00"
   },
   updatedAt: "2026-07-10T10:00:00"
 };
@@ -764,7 +765,8 @@ export const seedExoticPetData: PetMemoryData = {
   sectionUpdatedAt: {
     profile: "2026-07-10T10:00:00",
     contacts: "2026-07-10T10:00:00",
-    medications: "2026-07-10T10:00:00"
+    medications: "2026-07-10T10:00:00",
+    documents: "2026-07-10T10:00:00"
   },
   updatedAt: "2026-07-10T10:00:00"
 };

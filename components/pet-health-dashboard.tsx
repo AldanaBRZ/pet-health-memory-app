@@ -43,8 +43,18 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { seedAppData, seedData, seedExoticPetData, STORAGE_KEY } from "../lib/seed-data";
+import {
+  clearLocalPrivateFiles,
+  deletePrivateFile,
+  formatPrivateFileSize,
+  isPreviewableImage,
+  loadPrivateFile,
+  storePrivateFile,
+  validatePrivateFile
+} from "../lib/private-files";
 import { isEmailAllowedForTesting, isSupabaseConfigured, supabase } from "../lib/supabase-client";
 import type {
   AppMemoryData,
@@ -59,6 +69,7 @@ import type {
   PetOnboardingState,
   PetProfile,
   PetSectionTimestamps,
+  PrivateFileAttachment,
   PreventionCategory,
   PreventionItem,
   PreventionStatus,
@@ -86,6 +97,7 @@ type ViewId =
   | "longevity"
   | "recent"
   | "visit"
+  | "documents"
   | "emergency";
 
 type ViewMeta = { label: string; icon: LucideIcon };
@@ -99,8 +111,8 @@ type CommitPetMemory = (
   sections?: PetSection | PetSection[],
   petId?: string
 ) => void;
-type RegisterUndo = (message: string, restore: () => void) => void;
-type UndoAction = { id: string; message: string; restore: () => void };
+type RegisterUndo = (message: string, restore: () => void, finalize?: () => void | Promise<void>) => void;
+type UndoAction = { id: string; message: string; restore: () => void; finalize?: () => void | Promise<void> };
 type AppNotice = { id: string; message: string; tone: "info" | "error" };
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
@@ -123,6 +135,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
   longevity: { label: "Longevity", icon: ShieldCheck },
   recent: { label: "Recent", icon: Sparkles },
   visit: { label: "Vet Visit Mode", icon: MessageSquareText },
+  documents: { label: "Documents", icon: FileText },
   emergency: { label: "Emergency", icon: AlertTriangle }
 };
 
@@ -140,7 +153,8 @@ const primaryNavIds = navItems.map((item) => item.id);
 const moreToolItems: Array<{ view: ViewId; title: string; description: string; icon: LucideIcon }> = [
   { view: "profile", title: "Profile", description: "Identity, conditions, allergies, care instructions, and vet contacts.", icon: PawPrint },
   { view: "meds", title: "Medication tracker", description: "Dosage, frequency, refill notes, and active or ended meds.", icon: Pill },
-  { view: "symptoms", title: "Symptom log", description: "Severity, body area, notes, and photo/file placeholders.", icon: HeartPulse },
+  { view: "symptoms", title: "Symptom log", description: "Severity, body area, notes, and linked observations.", icon: HeartPulse },
+  { view: "documents", title: "Documents", description: "Private lab results, invoices, imaging, discharge notes, and care plans.", icon: FileText },
   { view: "expenses", title: "Costs", description: "Vet, meds, physio, food, insurance, and emergency spend.", icon: BadgeDollarSign },
   { view: "longevity", title: "Longevity", description: "Prevention, habits, watchlist, quality notes, and prep questions.", icon: ShieldCheck },
   { view: "visit", title: "Vet visit mode", description: "A focused screen for recent symptoms, medications, questions, costs, and documents.", icon: MessageSquareText },
@@ -651,7 +665,8 @@ function normalizePetMemoryData(value: Partial<PetMemoryData>, fallback: PetMemo
     sectionUpdatedAt: {
       profile: value.sectionUpdatedAt?.profile ?? updatedAt,
       contacts: value.sectionUpdatedAt?.contacts ?? updatedAt,
-      medications: value.sectionUpdatedAt?.medications ?? updatedAt
+      medications: value.sectionUpdatedAt?.medications ?? updatedAt,
+      documents: value.sectionUpdatedAt?.documents ?? updatedAt
     },
     updatedAt
   };
@@ -708,6 +723,17 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+function isPrivateFileAttachment(value: unknown): value is PrivateFileAttachment {
+  return (
+    isRecord(value) &&
+    hasStringFields(value, ["id", "fileName", "mimeType", "storage", "storagePath", "uploadedAt"]) &&
+    (value.storage === "local" || value.storage === "supabase") &&
+    typeof value.size === "number" &&
+    Number.isFinite(value.size) &&
+    value.size >= 0
+  );
+}
+
 function isRecordArray(value: unknown, validator: (item: Record<string, unknown>) => boolean) {
   return Array.isArray(value) && value.every((item) => isRecord(item) && validator(item));
 }
@@ -727,6 +753,9 @@ function validateImportedPet(value: unknown, index: number) {
   if (!isStringArray(profile.allergies) || !isStringArray(profile.conditions) || !isStringArray(profile.careInstructions)) {
     return `Pet ${index + 1} has invalid medical notes.`;
   }
+  if (profile.photo !== undefined && !isPrivateFileAttachment(profile.photo)) {
+    return `Pet ${index + 1} has an invalid profile photo reference.`;
+  }
   if (
     !isRecordArray(profile.vets, (vet) =>
       hasStringFields(vet, ["id", "clinic", "clinician", "role", "phone", "email", "address"])
@@ -736,14 +765,20 @@ function validateImportedPet(value: unknown, index: number) {
   }
 
   const collectionChecks: Array<[string, (item: Record<string, unknown>) => boolean]> = [
-    ["events", (item) => hasStringFields(item, ["id", "type", "date", "title", "detail", "source"])],
+    [
+      "events",
+      (item) =>
+        hasStringFields(item, ["id", "type", "date", "title", "detail", "source"]) &&
+        (item.attachments === undefined || (Array.isArray(item.attachments) && item.attachments.every(isPrivateFileAttachment)))
+    ],
     ["medications", (item) => hasStringFields(item, ["id", "name", "dosage", "frequency", "startDate", "status", "refillNotes"])],
     [
       "symptoms",
       (item) =>
         hasStringFields(item, ["id", "name", "bodyArea", "dateTime", "notes"]) &&
         typeof item.severity === "number" &&
-        isStringArray(item.files)
+        isStringArray(item.files) &&
+        (item.attachments === undefined || (Array.isArray(item.attachments) && item.attachments.every(isPrivateFileAttachment)))
     ],
     [
       "expenses",
@@ -754,7 +789,12 @@ function validateImportedPet(value: unknown, index: number) {
       "reminders",
       (item) => hasStringFields(item, ["id", "title", "type", "dueDate", "notes"]) && typeof item.done === "boolean"
     ],
-    ["documents", (item) => hasStringFields(item, ["id", "title", "date", "type", "source", "notes"])]
+    [
+      "documents",
+      (item) =>
+        hasStringFields(item, ["id", "title", "date", "type", "source", "notes"]) &&
+        (item.attachment === undefined || isPrivateFileAttachment(item.attachment))
+    ]
   ];
 
   for (const [field, validator] of collectionChecks) {
@@ -846,7 +886,8 @@ function createBlankPetMemory(): PetMemoryData {
     sectionUpdatedAt: {
       profile: now,
       contacts: now,
-      medications: now
+      medications: now,
+      documents: now
     },
     updatedAt: now
   };
@@ -868,6 +909,20 @@ function clearLocalPetMemory() {
     return "Could not clear local browser storage in this browser.";
   }
   return null;
+}
+
+function privateFilesForPet(pet: PetMemoryData) {
+  const attachments = [
+    pet.profile.photo,
+    ...pet.documents.map((document) => document.attachment),
+    ...pet.symptoms.flatMap((symptom) => symptom.attachments ?? []),
+    ...pet.events.flatMap((event) => event.attachments ?? [])
+  ].filter((attachment): attachment is PrivateFileAttachment => Boolean(attachment));
+  return [...new Map(attachments.map((attachment) => [`${attachment.storage}:${attachment.storagePath}`, attachment])).values()];
+}
+
+async function deletePrivateFiles(attachments: PrivateFileAttachment[]) {
+  await Promise.allSettled(attachments.map((attachment) => deletePrivateFile(attachment)));
 }
 
 function safeTimestamp(value?: string | null) {
@@ -1058,11 +1113,17 @@ export function PetHealthDashboard() {
     });
   };
 
-  const registerUndo: RegisterUndo = (message, restore) => {
+  const registerUndo: RegisterUndo = (message, restore, finalize) => {
     if (undoTimer.current) clearTimeout(undoTimer.current);
-    setUndoAction({ id: newId("undo"), message, restore });
+    setUndoAction((current) => {
+      if (current?.finalize) void Promise.resolve(current.finalize()).catch(() => undefined);
+      return { id: newId("undo"), message, restore, finalize };
+    });
     undoTimer.current = setTimeout(() => {
-      setUndoAction(null);
+      setUndoAction((current) => {
+        if (current?.finalize) void Promise.resolve(current.finalize()).catch(() => undefined);
+        return null;
+      });
       undoTimer.current = null;
     }, 8000);
   };
@@ -1078,7 +1139,10 @@ export function PetHealthDashboard() {
   const dismissUndo = () => {
     if (undoTimer.current) clearTimeout(undoTimer.current);
     undoTimer.current = null;
-    setUndoAction(null);
+    setUndoAction((current) => {
+      if (current?.finalize) void Promise.resolve(current.finalize()).catch(() => undefined);
+      return null;
+    });
   };
 
   const showNotice = (message: string, tone: AppNotice["tone"] = "info") => {
@@ -1125,19 +1189,23 @@ export function PetHealthDashboard() {
       updatedAt: new Date().toISOString()
     });
     setActiveView("overview");
-    registerUndo(`${removedPet.profile.name || "Pet"} was removed.`, () => {
-      setAppData((current) => {
-        if (current.pets.some((pet) => pet.id === removedPet.id)) return current;
-        const pets = [...current.pets];
-        pets.splice(Math.max(0, Math.min(removedIndex, pets.length)), 0, removedPet);
-        return {
-          ...current,
-          pets,
-          activePetId: previousActivePetId,
-          updatedAt: new Date().toISOString()
-        };
-      });
-    });
+    registerUndo(
+      `${removedPet.profile.name || "Pet"} was removed.`,
+      () => {
+        setAppData((current) => {
+          if (current.pets.some((pet) => pet.id === removedPet.id)) return current;
+          const pets = [...current.pets];
+          pets.splice(Math.max(0, Math.min(removedIndex, pets.length)), 0, removedPet);
+          return {
+            ...current,
+            pets,
+            activePetId: previousActivePetId,
+            updatedAt: new Date().toISOString()
+          };
+        });
+      },
+      () => deletePrivateFiles(privateFilesForPet(removedPet))
+    );
   };
 
   const importJson = async (file: File) => {
@@ -1302,6 +1370,7 @@ export function PetHealthDashboard() {
     cloudReadyForUser.current = null;
     skipNextCloudSave.current = false;
     const clearError = clearLocalPetMemory();
+    await clearLocalPrivateFiles().catch(() => undefined);
     loadedStoredLocalCopy.current = false;
     setAppData(seedAppData);
     setSyncStatus("signed-out");
@@ -1333,6 +1402,7 @@ export function PetHealthDashboard() {
     }
 
     setSyncStatus("saving");
+    await deletePrivateFiles(appData.pets.flatMap(privateFilesForPet));
     const { error } = await supabase.from("pet_memories").delete().eq("user_id", user.id);
     if (error) {
       setSyncStatus("error");
@@ -1344,6 +1414,7 @@ export function PetHealthDashboard() {
     cloudReadyForUser.current = null;
     skipNextCloudSave.current = false;
     const clearError = clearLocalPetMemory();
+    await clearLocalPrivateFiles().catch(() => undefined);
     loadedStoredLocalCopy.current = false;
     setUser(null);
     setAppData(seedAppData);
@@ -1401,9 +1472,12 @@ export function PetHealthDashboard() {
           <div className="rounded-xl border border-ink/10 bg-white/90 p-4 shadow-soft sm:p-5">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
               <div className="order-2 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start xl:order-1">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-pine text-white shadow-soft">
-                  <PawPrint className="h-6 w-6" aria-hidden="true" />
-                </div>
+                <PrivatePetImage
+                  attachment={data.profile.photo}
+                  alt={data.profile.name ? `${data.profile.name} profile` : "Pet profile"}
+                  className="h-16 w-16 rounded-xl"
+                  iconClassName="h-6 w-6"
+                />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-mist px-3 py-1 text-[11px] font-semibold uppercase tracking-normal text-pine">
@@ -1448,6 +1522,7 @@ export function PetHealthDashboard() {
                 onImportJson={importJson}
                 onResetSample={() => {
                   clearLocalPetMemory();
+                  void clearLocalPrivateFiles();
                   loadedStoredLocalCopy.current = false;
                   setAppData(seedAppData);
                 }}
@@ -1541,16 +1616,29 @@ export function PetHealthDashboard() {
               setupRequired={profileSetupRequired}
               onStartInEditModeConsumed={() => setProfileEditPetId(null)}
               registerUndo={registerUndo}
+              userId={user?.id}
+              showNotice={showNotice}
             />
           )}
           {currentView === "timeline" && <TimelineView data={data} commit={commit} />}
           {currentView === "meds" && <MedicationView data={data} commit={commit} registerUndo={registerUndo} />}
-          {currentView === "symptoms" && <SymptomView data={data} commit={commit} />}
+          {currentView === "symptoms" && (
+            <SymptomView data={data} commit={commit} userId={user?.id} showNotice={showNotice} />
+          )}
           {currentView === "expenses" && <ExpenseView data={data} commit={commit} />}
           {currentView === "trends" && <TrendsView data={data} metrics={metrics} commit={commit} />}
           {currentView === "longevity" && <LongevityView data={data} metrics={metrics} commit={commit} />}
           {currentView === "recent" && <RecentView data={data} />}
           {currentView === "visit" && <VetVisitView data={data} setActiveView={requestView} />}
+          {currentView === "documents" && (
+            <DocumentsView
+              data={data}
+              commit={commit}
+              registerUndo={registerUndo}
+              userId={user?.id}
+              showNotice={showNotice}
+            />
+          )}
           {currentView === "emergency" && <EmergencyView data={data} />}
         </main>
       </div>
@@ -1647,6 +1735,137 @@ function AppNoticeBanner({ message, tone, onDismiss }: { message: string; tone: 
       </button>
     </div>
   );
+}
+
+function usePrivateFileObjectUrl(attachment?: PrivateFileAttachment) {
+  const attachmentKey = attachment ? `${attachment.storage}:${attachment.storagePath}` : "";
+  const [resolved, setResolved] = useState<{ key: string; url: string } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    if (!attachment || !isPreviewableImage(attachment)) return;
+
+    loadPrivateFile(attachment)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setResolved({ key: `${attachment.storage}:${attachment.storagePath}`, url: objectUrl });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment]);
+
+  return resolved?.key === attachmentKey ? resolved.url : null;
+}
+
+function PrivatePetImage({
+  attachment,
+  alt,
+  className,
+  iconClassName = "h-5 w-5"
+}: {
+  attachment?: PrivateFileAttachment;
+  alt: string;
+  className: string;
+  iconClassName?: string;
+}) {
+  const url = usePrivateFileObjectUrl(attachment);
+  if (url) {
+    return <Image src={url} alt={alt} width={128} height={128} unoptimized className={`${className} shrink-0 object-cover shadow-soft`} />;
+  }
+  return (
+    <span className={`${className} flex shrink-0 items-center justify-center bg-pine text-white shadow-soft`} aria-label={alt}>
+      <PawPrint className={iconClassName} aria-hidden="true" />
+    </span>
+  );
+}
+
+function PrivateFileThumbnail({ attachment, title }: { attachment?: PrivateFileAttachment; title: string }) {
+  const url = usePrivateFileObjectUrl(attachment);
+  if (url) {
+    return <Image src={url} alt="" width={80} height={80} unoptimized className="h-20 w-20 shrink-0 rounded-lg border border-ink/10 object-cover" />;
+  }
+  return (
+    <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border border-ink/10 bg-ivory text-muted" aria-label={`${title} file`}>
+      <FileText className="h-6 w-6" aria-hidden="true" />
+    </span>
+  );
+}
+
+function AttachmentActions({ attachment, compact = false }: { attachment?: PrivateFileAttachment; compact?: boolean }) {
+  const [busyAction, setBusyAction] = useState<"open" | "download" | null>(null);
+  const [error, setError] = useState("");
+  if (!attachment) return null;
+
+  const openFile = async () => {
+    const previewWindow = window.open("", "_blank");
+    if (previewWindow) previewWindow.opener = null;
+    setBusyAction("open");
+    setError("");
+    try {
+      const blob = await loadPrivateFile(attachment);
+      const url = URL.createObjectURL(blob);
+      if (previewWindow) {
+        previewWindow.location.href = url;
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (openError) {
+      previewWindow?.close();
+      setError(openError instanceof Error ? openError.message : "Could not open this file.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const downloadFile = async () => {
+    setBusyAction("download");
+    setError("");
+    try {
+      downloadBlob(await loadPrivateFile(attachment), attachment.fileName);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : "Could not download this file.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  return (
+    <div className="no-print">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={openFile}
+          disabled={Boolean(busyAction)}
+          className={`${compact ? "min-h-8 px-2 py-1 text-xs" : "min-h-9 px-3 py-2 text-sm"} inline-flex items-center gap-2 rounded-lg border border-ink/10 bg-white font-semibold text-ink transition hover:border-pine/30 hover:bg-mist disabled:opacity-60`}
+        >
+          <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+          {busyAction === "open" ? "Opening" : "Open"}
+        </button>
+        <button
+          type="button"
+          onClick={downloadFile}
+          disabled={Boolean(busyAction)}
+          className={`${compact ? "min-h-8 px-2 py-1 text-xs" : "min-h-9 px-3 py-2 text-sm"} inline-flex items-center gap-2 rounded-lg border border-ink/10 bg-white font-semibold text-ink transition hover:border-pine/30 hover:bg-mist disabled:opacity-60`}
+        >
+          <Download className="h-3.5 w-3.5" aria-hidden="true" />
+          {busyAction === "download" ? "Preparing" : "Download"}
+        </button>
+      </div>
+      {error && <p className="mt-2 max-w-sm text-xs font-medium text-coral" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+function attachmentStorageLabel(attachment?: PrivateFileAttachment) {
+  if (!attachment) return "Reference only";
+  return attachment.storage === "supabase" ? "Private cloud file" : "Stored on this device";
 }
 
 function PetFact({ label, value }: { label: string; value: string }) {
@@ -2846,8 +3065,10 @@ function MoreView({
     profile: `${data.profile.conditions.length} conditions`,
     meds: `${metrics.activeMedicationCount} active`,
     symptoms: `${metrics.symptomsLast30} in 30d`,
+    documents: `${data.documents.length} on file`,
     expenses: currency(metrics.costLast30),
     longevity: `${metrics.routineCompletionRate}% routines`,
+    visit: "Focused view",
     recent: "Vet prep"
   };
 
@@ -2892,7 +3113,9 @@ function ProfileView({
   startInEditMode = false,
   setupRequired = false,
   onStartInEditModeConsumed,
-  registerUndo
+  registerUndo,
+  userId,
+  showNotice
 }: {
   data: PetMemoryData;
   commit: CommitPetMemory;
@@ -2900,6 +3123,8 @@ function ProfileView({
   setupRequired?: boolean;
   onStartInEditModeConsumed?: () => void;
   registerUndo: RegisterUndo;
+  userId?: string;
+  showNotice: (message: string, tone?: AppNotice["tone"]) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draftProfile, setDraftProfile] = useState<PetProfile>(() => cloneProfile(data.profile));
@@ -2907,6 +3132,7 @@ function ProfileView({
   const [saveAttempted, setSaveAttempted] = useState(false);
   const [breedSearch, setBreedSearch] = useState(data.profile.breed);
   const [breedPickerOpen, setBreedPickerOpen] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const profileErrors = useMemo(() => validateProfile(draftProfile), [draftProfile]);
   const profileHasErrors = hasProfileErrors(profileErrors);
   const showValidation = isEditing && (saveAttempted || profileHasErrors);
@@ -2958,7 +3184,7 @@ function ProfileView({
       setSaveAttempted(true);
       return;
     }
-    const nextProfile = cleanProfile(cloneProfile(draftProfile));
+    const nextProfile = { ...cleanProfile(cloneProfile(draftProfile)), photo: data.profile.photo };
     const removedVets = data.profile.vets
       .map((vet, index) => ({ vet: { ...vet }, index }))
       .filter(({ vet }) => !nextProfile.vets.some((item) => item.id === vet.id));
@@ -3073,6 +3299,50 @@ function ProfileView({
     }));
   };
 
+  const uploadProfilePhoto = async (file?: File) => {
+    if (!file) return;
+    const validationError = validatePrivateFile(file, "profile");
+    if (validationError) {
+      showNotice(validationError, "error");
+      return;
+    }
+
+    setPhotoBusy(true);
+    try {
+      const previousPhoto = data.profile.photo;
+      const nextPhoto = await storePrivateFile({ file, kind: "profile", petId: data.id, userId });
+      commit((current) => ({ ...current, profile: { ...current.profile, photo: nextPhoto } }), "profile", data.id);
+      registerUndo(
+        previousPhoto ? "Profile photo updated." : "Profile photo added.",
+        () => {
+          commit(
+            (current) => ({ ...current, profile: { ...current.profile, photo: previousPhoto } }),
+            "profile",
+            data.id
+          );
+          void deletePrivateFile(nextPhoto);
+        },
+        previousPhoto ? () => deletePrivateFile(previousPhoto) : undefined
+      );
+      showNotice(nextPhoto.storage === "supabase" ? "Profile photo saved privately and synced." : "Profile photo saved on this device.");
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "Could not save that profile photo.", "error");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const removeProfilePhoto = () => {
+    const photo = data.profile.photo;
+    if (!photo || !window.confirm("Remove this pet's profile photo? You can undo this for a few seconds.")) return;
+    commit((current) => ({ ...current, profile: { ...current.profile, photo: undefined } }), "profile", data.id);
+    registerUndo(
+      "Profile photo removed.",
+      () => commit((current) => ({ ...current, profile: { ...current.profile, photo } }), "profile", data.id),
+      () => deletePrivateFile(photo)
+    );
+  };
+
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
       <div className="lg:col-span-2 rounded-lg border border-ink/10 bg-white/85 p-4 shadow-soft">
@@ -3109,6 +3379,52 @@ function ProfileView({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <SectionTitle icon={PawPrint} title="Pet profile" />
           <SectionUpdated value={data.sectionUpdatedAt.profile} />
+        </div>
+        <div className="mt-5 flex flex-col gap-4 rounded-lg border border-ink/10 bg-ivory p-4 sm:flex-row sm:items-center">
+          <PrivatePetImage
+            attachment={data.profile.photo}
+            alt={data.profile.name ? `${data.profile.name} profile photo` : "Pet profile photo"}
+            className="h-24 w-24 rounded-lg"
+            iconClassName="h-8 w-8"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-ink">Profile photo</p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              {data.profile.photo
+                ? `${attachmentStorageLabel(data.profile.photo)} · ${formatPrivateFileSize(data.profile.photo.size)}`
+                : "Add a clear photo to make pets easier to recognize in a multi-pet household."}
+            </p>
+            {isEditing && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-pine/20 bg-mist px-3 py-2 text-xs font-semibold text-pine transition hover:border-pine/40 hover:bg-sage/30">
+                  <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                  {photoBusy ? "Saving photo" : data.profile.photo ? "Replace photo" : "Add photo"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                    className="sr-only"
+                    disabled={photoBusy}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      void uploadProfilePhoto(file);
+                    }}
+                  />
+                </label>
+                {data.profile.photo && (
+                  <button
+                    type="button"
+                    onClick={removeProfilePhoto}
+                    disabled={photoBusy}
+                    className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-coral/20 bg-coral/5 px-3 py-2 text-xs font-semibold text-coral transition hover:border-coral/40 disabled:opacity-60"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Remove
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <div className="mt-5 grid gap-4">
           <div className="grid gap-4 md:grid-cols-2 md:items-start">
@@ -3597,7 +3913,6 @@ function TimelineView({
             )}
           </div>
         </Panel>
-        <DocumentsUpload data={data} commit={commit} />
       </div>
     </div>
   );
@@ -4007,16 +4322,34 @@ function MedicationGroup({
 
 function SymptomView({
   data,
-  commit
+  commit,
+  userId,
+  showNotice
 }: {
   data: PetMemoryData;
-  commit: (updater: (current: PetMemoryData) => PetMemoryData) => void;
+  commit: CommitPetMemory;
+  userId?: string;
+  showNotice: (message: string, tone?: AppNotice["tone"]) => void;
 }) {
   const [draft, setDraft] = useState<SymptomLog>(emptySymptom);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     if (!draft.name.trim() || !draft.notes.trim()) return;
-    const symptom: SymptomLog = { ...draft, id: newId("sym") };
+    setSaving(true);
+    const attachments: PrivateFileAttachment[] = [];
+    const uploadErrors: string[] = [];
+    for (const file of photoFiles) {
+      try {
+        attachments.push(await storePrivateFile({ file, kind: "symptom", petId: data.id, userId }));
+      } catch (error) {
+        uploadErrors.push(`${file.name}: ${error instanceof Error ? error.message : "Upload failed."}`);
+      }
+    }
+
+    const fileNames = photoFiles.map((file) => file.name);
+    const symptom: SymptomLog = { ...draft, id: newId("sym"), files: fileNames, attachments };
     const event: HealthEvent = {
       id: newId("evt"),
       type: "symptom",
@@ -4026,14 +4359,42 @@ function SymptomView({
       source: "Owner symptom log",
       severity: draft.severity,
       bodyArea: draft.bodyArea,
-      files: draft.files
+      files: fileNames,
+      attachments
     };
-    commit((current) => ({
-      ...current,
-      symptoms: [symptom, ...current.symptoms],
-      events: [event, ...current.events]
-    }));
+    commit(
+      (current) => ({
+        ...current,
+        symptoms: [symptom, ...current.symptoms],
+        events: [event, ...current.events]
+      }),
+      undefined,
+      data.id
+    );
     setDraft(emptySymptom());
+    setPhotoFiles([]);
+    setSaving(false);
+    if (uploadErrors.length > 0) {
+      showNotice(`Symptom saved, but ${uploadErrors.slice(0, 2).join(" ")}`, "error");
+    } else {
+      showNotice(
+        attachments.length
+          ? `Symptom and ${attachments.length} private ${attachments.length === 1 ? "photo" : "photos"} saved.`
+          : "Symptom saved."
+      );
+    }
+  };
+
+  const chooseSymptomPhotos = (files: FileList | null) => {
+    if (!files?.length) return;
+    const selected = Array.from(files).slice(0, 5);
+    const validationError = selected.map((file) => validatePrivateFile(file, "symptom")).find(Boolean);
+    if (validationError) {
+      showNotice(validationError, "error");
+      return;
+    }
+    setPhotoFiles(selected);
+    if (files.length > 5) showNotice("Only the first 5 symptom photos were selected.");
   };
 
   return (
@@ -4066,23 +4427,34 @@ function SymptomView({
           <Field label="Notes">
             <textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} className="input min-h-28" />
           </Field>
-          <Field label="Photo or file names">
-            <input
-              value={draft.files.join(", ")}
-              onChange={(event) =>
-                setDraft({
-                  ...draft,
-                  files: event.target.value
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter(Boolean)
-                })
-              }
-              placeholder="limp-video.mov, paw-photo.jpg"
-              className="input"
-            />
+          <Field label="Symptom photos" helper="Optional · up to 5 images · 10 MB each">
+            <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-pine/30 bg-mist/45 px-3 py-2 text-sm font-semibold text-pine transition hover:border-pine/50 hover:bg-mist">
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {photoFiles.length > 0 ? "Choose different photos" : "Attach photos"}
+              <input
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                className="sr-only"
+                disabled={saving}
+                onChange={(event) => {
+                  const files = event.target.files;
+                  event.target.value = "";
+                  chooseSymptomPhotos(files);
+                }}
+              />
+            </label>
+            {photoFiles.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {photoFiles.map((file) => (
+                  <span key={`${file.name}-${file.size}`} className="rounded-lg border border-ink/10 bg-oat px-2 py-1 text-xs font-medium text-muted">
+                    {file.name} · {formatPrivateFileSize(file.size)}
+                  </span>
+                ))}
+              </div>
+            )}
           </Field>
-          <ActionButton icon={Plus} label="Save symptom" onClick={submit} />
+          <ActionButton icon={Plus} label={saving ? "Saving symptom" : "Save symptom"} onClick={() => void submit()} disabled={saving} />
         </div>
       </Panel>
 
@@ -4102,9 +4474,23 @@ function SymptomView({
                 </div>
               </div>
               <p className="mt-3 text-sm leading-6 text-ink">{symptom.notes}</p>
+              {symptom.attachments && symptom.attachments.length > 0 && (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {symptom.attachments.map((attachment) => (
+                    <div key={attachment.id} className="flex items-center gap-3 rounded-lg border border-ink/10 bg-ivory p-3">
+                      <PrivateFileThumbnail attachment={attachment} title={symptom.name} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-ink">{attachment.fileName}</p>
+                        <p className="mt-1 text-xs text-muted">{formatPrivateFileSize(attachment.size)} · {attachmentStorageLabel(attachment)}</p>
+                        <div className="mt-2"><AttachmentActions attachment={attachment} compact /></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {symptom.files.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {symptom.files.map((file) => (
+                  {symptom.files.filter((file) => !symptom.attachments?.some((attachment) => attachment.fileName === file)).map((file) => (
                     <span key={file} className="rounded-lg border border-ink/10 bg-oat px-2 py-1 text-xs font-medium text-muted">
                       {file}
                     </span>
@@ -4986,6 +5372,11 @@ function VetVisitView({
                   </div>
                   <p className="mt-1 text-xs font-medium text-muted">{formatDate(symptom.dateTime, true)} · {symptom.bodyArea || "Body area not set"}</p>
                   <p className="mt-2 text-sm leading-6 text-muted">{symptom.notes}</p>
+                  {symptom.attachments && symptom.attachments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {symptom.attachments.map((attachment) => <AttachmentActions key={attachment.id} attachment={attachment} compact />)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -5036,9 +5427,12 @@ function VetVisitView({
           {recentDocuments.length > 0 ? (
             <ul className="mt-4 space-y-3 text-sm">
               {recentDocuments.map((document) => (
-                <li key={document.id} className="flex items-start justify-between gap-3 border-b border-ink/10 pb-3 last:border-0 last:pb-0">
-                  <span className="font-semibold text-ink">{document.title}</span>
-                  <span className="shrink-0 text-xs font-medium text-muted">{formatDate(document.date)}</span>
+                <li key={document.id} className="flex flex-col gap-2 border-b border-ink/10 pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <span className="font-semibold text-ink">{document.title}</span>
+                    <p className="mt-1 text-xs font-medium text-muted">{document.type} · {formatDate(document.date)}</p>
+                  </div>
+                  <AttachmentActions attachment={document.attachment} compact />
                 </li>
               ))}
             </ul>
@@ -5085,12 +5479,19 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
       </div>
 
       <div className="flex flex-col gap-4 border-b-2 border-ink pb-5 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-coral">Vet Packet · Emergency essentials first</p>
-          <h2 className="mt-1 text-3xl font-semibold tracking-normal text-ink">{data.profile.name}</h2>
-          <p className="mt-2 text-sm text-muted">
-            {displaySpecies(data.profile)} · {displayBreed(data.profile)} · {getAge(data.profile.birthDate)} · {data.profile.sex || "Sex not set"} · {formatWeightKg(data.profile.weightKg)}
-          </p>
+        <div className="flex items-start gap-4">
+          <PrivatePetImage
+            attachment={data.profile.photo}
+            alt={`${data.profile.name} profile photo`}
+            className="h-16 w-16 rounded-lg"
+          />
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-normal text-coral">Vet Packet · Emergency essentials first</p>
+            <h2 className="mt-1 text-3xl font-semibold tracking-normal text-ink">{data.profile.name}</h2>
+            <p className="mt-2 text-sm text-muted">
+              {displaySpecies(data.profile)} · {displayBreed(data.profile)} · {getAge(data.profile.birthDate)} · {data.profile.sex || "Sex not set"} · {formatWeightKg(data.profile.weightKg)}
+            </p>
+          </div>
         </div>
         <dl className="grid gap-2 text-sm sm:min-w-72">
           <Definition label="Microchip" value={data.profile.microchip} />
@@ -5119,6 +5520,11 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
                   </div>
                   <p className="mt-1 text-xs text-muted">{formatDate(symptom.dateTime, true)} · {symptom.bodyArea || "Body area not set"}</p>
                   <p className="mt-2 text-sm leading-6 text-ink">{symptom.notes}</p>
+                  {symptom.attachments && symptom.attachments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {symptom.attachments.map((attachment) => <AttachmentActions key={attachment.id} attachment={attachment} compact />)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -5176,11 +5582,14 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
         <h3 className="text-base font-semibold text-ink">Documents on file</h3>
         <div className="mt-3 grid gap-2 text-sm">
           {data.documents.map((document) => (
-            <div key={document.id} className="flex flex-col gap-1 rounded-lg border border-ink/10 p-3 sm:flex-row sm:items-center sm:justify-between">
-              <span className="font-medium text-ink">{document.title}</span>
-              <span className="text-muted">
-                {document.type} · {formatDate(document.date)} · {document.fileName ?? "No file name"}
-              </span>
+            <div key={document.id} className="flex flex-col gap-3 rounded-lg border border-ink/10 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <span className="font-medium text-ink">{document.title}</span>
+                <p className="mt-1 text-xs text-muted">
+                  {document.type} · {formatDate(document.date)} · {document.fileName ?? "No file name"}
+                </p>
+              </div>
+              <AttachmentActions attachment={document.attachment} compact />
             </div>
           ))}
           {data.documents.length === 0 && <p className="text-sm text-muted">No documents listed.</p>}
@@ -5202,67 +5611,240 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
   );
 }
 
-function DocumentsUpload({
+const documentTypes: VetDocument["type"][] = ["Lab", "Invoice", "Imaging", "Discharge", "Care plan", "Other"];
+
+function inferDocumentType(fileName: string): VetDocument["type"] {
+  const name = fileName.toLowerCase();
+  if (/lab|blood|urine|pathology|result/.test(name)) return "Lab";
+  if (/invoice|receipt|bill/.test(name)) return "Invoice";
+  if (/xray|x-ray|scan|ultrasound|mri|ct|imaging/.test(name)) return "Imaging";
+  if (/discharge|aftercare/.test(name)) return "Discharge";
+  if (/care.?plan|exercise|rehab|physio/.test(name)) return "Care plan";
+  return "Other";
+}
+
+function DocumentsView({
   data,
-  commit
+  commit,
+  registerUndo,
+  userId,
+  showNotice
 }: {
   data: PetMemoryData;
-  commit: (updater: (current: PetMemoryData) => PetMemoryData) => void;
+  commit: CommitPetMemory;
+  registerUndo: RegisterUndo;
+  userId?: string;
+  showNotice: (message: string, tone?: AppNotice["tone"]) => void;
 }) {
-  const addDocuments = (files: FileList | null) => {
+  const [uploading, setUploading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<VetDocument | null>(null);
+  const sortedDocuments = [...data.documents].sort(sortByDateDesc("date"));
+  const attachedCount = data.documents.filter((document) => document.attachment).length;
+
+  const addDocuments = async (files: FileList | null) => {
     if (!files?.length) return;
-    const documents: VetDocument[] = Array.from(files).map((file) => ({
-      id: newId("doc"),
-      title: file.name.replace(/\.[^.]+$/, ""),
-      date: todayInput(),
-      type: "Other",
-      source: "Local attachment placeholder",
-      fileName: file.name,
-      notes: "File metadata saved locally. Connect storage before storing medical files in production."
-    }));
-    commit((current) => ({ ...current, documents: [...documents, ...current.documents] }));
+    if (files.length > 10) {
+      showNotice("Attach up to 10 files at a time.", "error");
+      return;
+    }
+
+    setUploading(true);
+    const uploaded: VetDocument[] = [];
+    const errors: string[] = [];
+    for (const file of Array.from(files)) {
+      const validationError = validatePrivateFile(file, "document");
+      if (validationError) {
+        errors.push(`${file.name}: ${validationError}`);
+        continue;
+      }
+      try {
+        const attachment = await storePrivateFile({ file, kind: "document", petId: data.id, userId });
+        uploaded.push({
+          id: newId("doc"),
+          title: file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim(),
+          date: todayInput(),
+          type: inferDocumentType(file.name),
+          source: "Uploaded by owner",
+          fileName: file.name,
+          attachment,
+          notes: ""
+        });
+      } catch (error) {
+        errors.push(`${file.name}: ${error instanceof Error ? error.message : "Upload failed."}`);
+      }
+    }
+
+    if (uploaded.length > 0) {
+      commit((current) => ({ ...current, documents: [...uploaded, ...current.documents] }), "documents", data.id);
+      showNotice(
+        `${uploaded.length} ${uploaded.length === 1 ? "document" : "documents"} saved ${userId ? "privately and synced" : "on this device"}.`
+      );
+    }
+    if (errors.length > 0) showNotice(errors.slice(0, 2).join(" "), "error");
+    setUploading(false);
+  };
+
+  const beginEdit = (document: VetDocument) => {
+    setEditingId(document.id);
+    setDraft({ ...document });
+  };
+
+  const saveEdit = () => {
+    if (!draft?.title.trim()) return;
+    const nextDocument = { ...draft, title: draft.title.trim(), source: draft.source.trim(), notes: draft.notes.trim() };
+    commit(
+      (current) => ({ ...current, documents: current.documents.map((document) => (document.id === nextDocument.id ? nextDocument : document)) }),
+      "documents",
+      data.id
+    );
+    setEditingId(null);
+    setDraft(null);
+  };
+
+  const removeDocument = (document: VetDocument) => {
+    if (!window.confirm(`Delete ${document.title}? You can undo this for a few seconds.`)) return;
+    const index = data.documents.findIndex((item) => item.id === document.id);
+    commit((current) => ({ ...current, documents: current.documents.filter((item) => item.id !== document.id) }), "documents", data.id);
+    setEditingId(null);
+    setDraft(null);
+    registerUndo(
+      `${document.title} was removed.`,
+      () =>
+        commit(
+          (current) => {
+            if (current.documents.some((item) => item.id === document.id)) return current;
+            const documents = [...current.documents];
+            documents.splice(Math.max(0, Math.min(index, documents.length)), 0, document);
+            return { ...current, documents };
+          },
+          "documents",
+          data.id
+        ),
+      document.attachment ? () => deletePrivateFile(document.attachment as PrivateFileAttachment) : undefined
+    );
   };
 
   return (
-    <Panel>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <SectionTitle icon={FileText} title="Vet documents" />
-        <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-pine bg-pine px-3 py-2 text-sm font-semibold text-white shadow-soft transition hover:bg-ink">
-          <Upload className="h-4 w-4" aria-hidden="true" />
-          Attach files
-          <input className="sr-only" type="file" multiple onChange={(event) => addDocuments(event.target.files)} />
-        </label>
-      </div>
-      <div className="mt-5 grid gap-3">
-        {data.documents.map((document) => (
-          <div key={document.id} className="rounded-lg border border-ink/10 bg-white/75 p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="font-semibold text-ink">{document.title}</h3>
-                <p className="mt-1 text-sm text-muted">
-                  {document.type} · {document.source}
-                </p>
-              </div>
-              <span className="text-sm font-medium text-muted">{formatDate(document.date)}</span>
+    <div className="mx-auto max-w-5xl">
+      <Panel>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <SectionTitle icon={FileText} title="Vet documents" />
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
+              Keep lab results, invoices, imaging, discharge notes, and care plans with this pet&apos;s history.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-muted">
+              <SectionUpdated value={data.sectionUpdatedAt.documents} />
+              <span>{attachedCount} private {attachedCount === 1 ? "file" : "files"}</span>
+              <span>PDF or image · 10 MB max</span>
             </div>
-            <p className="mt-3 text-sm leading-6 text-ink">{document.notes}</p>
-            {document.fileName && (
-              <p className="mt-2 inline-flex items-center gap-2 rounded-lg bg-oat px-2 py-1 text-xs font-medium text-muted">
-                <FilePlus2 className="h-3.5 w-3.5" aria-hidden="true" />
-                {document.fileName}
-              </p>
-            )}
           </div>
-        ))}
-        {data.documents.length === 0 && (
-          <GuidedEmptyState
-            icon={FileText}
-            title="No vet documents attached"
-            description="Attach a lab result, invoice, discharge note, scan, or photo reference so it stays connected to this pet&apos;s history."
-          />
-        )}
-      </div>
-    </Panel>
+          <label className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-pine bg-pine px-3 py-2 text-sm font-semibold text-white shadow-soft transition ${uploading ? "cursor-wait opacity-65" : "cursor-pointer hover:bg-ink"}`}>
+            <Upload className="h-4 w-4" aria-hidden="true" />
+            {uploading ? "Saving files" : "Attach files"}
+            <input
+              className="sr-only"
+              type="file"
+              multiple
+              disabled={uploading}
+              accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
+              onChange={(event) => {
+                const files = event.target.files;
+                event.target.value = "";
+                void addDocuments(files);
+              }}
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 rounded-lg border border-pine/15 bg-mist/55 p-4 text-sm leading-6 text-muted">
+          <p className="font-semibold text-ink">{userId ? "Private account storage" : "Local-only file storage"}</p>
+          <p className="mt-1">
+            {userId
+              ? "Files are stored privately under your account. Only the signed-in owner can open or download them."
+              : "Files stay in this browser and are not included in JSON exports. Sign-in storage is needed to see them on another device."}
+          </p>
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          {sortedDocuments.map((document) => {
+            const isEditing = editingId === document.id && draft;
+            return (
+              <article key={document.id} className="rounded-lg border border-ink/10 bg-white/75 p-4">
+                {isEditing ? (
+                  <div className="grid gap-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Title">
+                        <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} className="input" />
+                      </Field>
+                      <Field label="Document type">
+                        <select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as VetDocument["type"] })} className="input">
+                          {documentTypes.map((type) => <option key={type}>{type}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Document date">
+                        <input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} className="input" />
+                      </Field>
+                      <Field label="Source">
+                        <input value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })} className="input" />
+                      </Field>
+                    </div>
+                    <Field label="Notes">
+                      <textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} className="input min-h-24" />
+                    </Field>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <ActionButton icon={X} label="Cancel" onClick={() => { setEditingId(null); setDraft(null); }} variant="secondary" />
+                      <ActionButton icon={Save} label="Save changes" onClick={saveEdit} disabled={!draft.title.trim()} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                    <PrivateFileThumbnail attachment={document.attachment} title={document.title} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold text-ink">{document.title}</h3>
+                            <span className="rounded-lg bg-oat px-2 py-1 text-xs font-semibold text-muted">{document.type}</span>
+                          </div>
+                          <p className="mt-1 text-sm text-muted">{formatDate(document.date)} · {document.source || "Source not set"}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => beginEdit(document)} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-xs font-semibold text-ink transition hover:border-pine/30 hover:bg-mist">
+                            <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Edit
+                          </button>
+                          <button type="button" onClick={() => removeDocument(document)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-coral/20 bg-coral/5 text-coral transition hover:border-coral/40" aria-label={`Delete ${document.title}`} title="Delete document">
+                            <X className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                      {document.notes && <p className="mt-3 text-sm leading-6 text-ink">{document.notes}</p>}
+                      <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <p className="inline-flex min-w-0 items-center gap-2 text-xs font-medium text-muted">
+                          <FilePlus2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{document.fileName ?? "No file attached"}</span>
+                          {document.attachment && <span className="shrink-0">· {formatPrivateFileSize(document.attachment.size)}</span>}
+                          <span className="shrink-0">· {attachmentStorageLabel(document.attachment)}</span>
+                        </p>
+                        <AttachmentActions attachment={document.attachment} compact />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+          {data.documents.length === 0 && (
+            <GuidedEmptyState
+              icon={FileText}
+              title="Keep the first vet record here"
+              description="Attach a lab result, invoice, x-ray image, discharge note, or care plan. It will stay connected to this pet and appear in visit preparation."
+            />
+          )}
+        </div>
+      </Panel>
+    </div>
   );
 }
 
@@ -5420,9 +6002,19 @@ function TimelineItem({ event }: { event: HealthEvent }) {
         {event.bodyArea && <span>Body area: {event.bodyArea}</span>}
         {event.related && <span>Related: {event.related}</span>}
       </div>
+      {event.attachments && event.attachments.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {event.attachments.map((attachment) => (
+            <div key={attachment.id} className="rounded-lg border border-ink/10 bg-ivory p-2">
+              <p className="mb-2 max-w-52 truncate text-xs font-medium text-muted">{attachment.fileName}</p>
+              <AttachmentActions attachment={attachment} compact />
+            </div>
+          ))}
+        </div>
+      )}
       {event.files && event.files.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {event.files.map((file) => (
+          {event.files.filter((file) => !event.attachments?.some((attachment) => attachment.fileName === file)).map((file) => (
             <span key={file} className="rounded-lg border border-ink/10 bg-oat px-2 py-1 text-xs font-medium text-muted">
               {file}
             </span>
@@ -5887,7 +6479,7 @@ function buildSummaryRequestData(data: PetMemoryData) {
 function downloadJson(data: AppMemoryData) {
   if (
     !window.confirm(
-      "Export the full household JSON backup?\n\nThis file includes private pet health notes, vet contacts, medications, microchip/insurance fields, expenses, and reminders. Store or share it carefully."
+      "Export the household JSON data?\n\nThis file includes private pet health notes, vet contacts, medications, microchip/insurance fields, expenses, reminders, and attachment references. Private profile photos and document file contents are not embedded, so download those separately if you need a media backup. Store or share the JSON carefully."
     )
   ) {
     return;
@@ -5900,7 +6492,7 @@ function downloadJson(data: AppMemoryData) {
 function downloadVetPacketHtml(data: PetMemoryData) {
   if (
     !window.confirm(
-      "Download this Vet Packet as an HTML file?\n\nIt includes private health details, medications, contacts, recent symptoms, expenses, documents, and visit questions. Share it only with people who should see this pet's care information."
+      "Download this Vet Packet as an HTML file?\n\nIt includes private health details, medications, contacts, recent symptoms, expenses, document names, and visit questions. Attached file contents are not embedded. Share it only with people who should see this pet's care information."
     )
   ) {
     return;

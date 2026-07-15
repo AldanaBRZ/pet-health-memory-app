@@ -1,5 +1,15 @@
 export type Species = "Dog" | "Cat" | "Rabbit" | "Bird" | "Reptile" | "Small mammal" | "Horse" | "Fish" | "Other";
 
+export type PrivateFileAttachment = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  storage: "local" | "supabase";
+  storagePath: string;
+  uploadedAt: string;
+};
+
 export type VetContact = {
   id: string;
   clinic: string;
@@ -13,6 +23,7 @@ export type VetContact = {
 
 export type PetProfile = {
   name: string;
+  photo?: PrivateFileAttachment;
   species: Species;
   customSpecies?: string;
   breed: string;
@@ -49,6 +60,7 @@ export type HealthEvent = {
   severity?: number;
   bodyArea?: string;
   files?: string[];
+  attachments?: PrivateFileAttachment[];
 };
 
 export type Medication = {
@@ -71,6 +83,7 @@ export type SymptomLog = {
   dateTime: string;
   notes: string;
   files: string[];
+  attachments?: PrivateFileAttachment[];
 };
 
 export type ExpenseCategory =
@@ -111,6 +124,7 @@ export type VetDocument = {
   type: "Lab" | "Invoice" | "Imaging" | "Discharge" | "Care plan" | "Other";
   source: string;
   fileName?: string;
+  attachment?: PrivateFileAttachment;
   notes: string;
 };
 
@@ -197,6 +211,7 @@ export type PetSectionTimestamps = {
   profile: string;
   contacts: string;
   medications: string;
+  documents: string;
 };
 
 export type PetMemoryData = {
