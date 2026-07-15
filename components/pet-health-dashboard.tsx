@@ -139,6 +139,25 @@ const viewMeta: Record<ViewId, ViewMeta> = {
   emergency: { label: "Emergency", icon: AlertTriangle }
 };
 
+const VIEW_HISTORY_KEY = "petHealthView";
+
+function historyView(state: unknown): ViewId | null {
+  if (!state || typeof state !== "object") return null;
+  const value = (state as Record<string, unknown>)[VIEW_HISTORY_KEY];
+  return typeof value === "string" && value in viewMeta ? (value as ViewId) : null;
+}
+
+function writeViewHistory(view: ViewId, mode: "push" | "replace") {
+  const currentState = window.history.state;
+  const state = currentState && typeof currentState === "object" ? currentState : {};
+  const nextState = { ...state, [VIEW_HISTORY_KEY]: view };
+  if (mode === "push") {
+    window.history.pushState(nextState, "", window.location.href);
+  } else {
+    window.history.replaceState(nextState, "", window.location.href);
+  }
+}
+
 const navItems: Array<{ id: ViewId; label: string; icon: LucideIcon }> = [
   { id: "overview", label: "Today", icon: Home },
   { id: "timeline", label: "Timeline", icon: NotebookTabs },
@@ -950,6 +969,7 @@ export function PetHealthDashboard() {
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const historyInitialized = useRef(false);
   const data = appData.pets.find((pet) => pet.id === appData.activePetId) ?? appData.pets[0] ?? seedData;
 
   useEffect(() => {
@@ -1163,6 +1183,7 @@ export function PetHealthDashboard() {
     });
     setActiveView("overview");
     setViewTransitionId((current) => current + 1);
+    writeViewHistory("overview", "replace");
   };
 
   const addPet = () => {
@@ -1177,6 +1198,7 @@ export function PetHealthDashboard() {
     setProfileEditPetId(pet.id);
     setActiveView("profile");
     setViewTransitionId((current) => current + 1);
+    writeViewHistory("profile", "replace");
   };
 
   const removeActivePet = () => {
@@ -1194,6 +1216,7 @@ export function PetHealthDashboard() {
     });
     setActiveView("overview");
     setViewTransitionId((current) => current + 1);
+    writeViewHistory("overview", "replace");
     registerUndo(
       `${removedPet.profile.name || "Pet"} was removed.`,
       () => {
@@ -1258,6 +1281,7 @@ export function PetHealthDashboard() {
     setProfileEditPetId(null);
     setActiveView("overview");
     setViewTransitionId((current) => current + 1);
+    writeViewHistory("overview", "replace");
     setAuthMessage(`Imported ${importedData.pets.length} pet${importedData.pets.length === 1 ? "" : "s"} from ${file.name}.`);
     showNotice(`Imported ${importedData.pets.length} pet${importedData.pets.length === 1 ? "" : "s"} from ${file.name}.`);
   };
@@ -1446,10 +1470,35 @@ export function PetHealthDashboard() {
   }, [viewTransitionId]);
 
   useEffect(() => {
+    if (!ready || (isSupabaseConfigured && !user)) {
+      historyInitialized.current = false;
+      return;
+    }
+
+    if (!historyInitialized.current) {
+      writeViewHistory(currentView, "replace");
+      historyInitialized.current = true;
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      const requestedView = historyView(event.state) ?? "overview";
+      const nextView = profileSetupRequired ? "profile" : requestedView;
+      if (nextView !== requestedView) writeViewHistory(nextView, "replace");
+      setActiveView(nextView);
+      setViewTransitionId((current) => current + 1);
+      if (nextView === "profile" && profileSetupRequired) setProfileEditPetId(data.id);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [currentView, data.id, profileSetupRequired, ready, user]);
+
+  useEffect(() => {
     if (!ready || !profileSetupRequired) return;
     setActiveView("profile");
     setViewTransitionId((current) => current + 1);
     setProfileEditPetId(data.id);
+    writeViewHistory("profile", "replace");
   }, [data.id, profileSetupRequired, ready]);
 
   const requestView = (view: ViewId) => {
@@ -1457,6 +1506,7 @@ export function PetHealthDashboard() {
       setActiveView("profile");
       setViewTransitionId((current) => current + 1);
       setProfileEditPetId(data.id);
+      writeViewHistory("profile", "replace");
       return;
     }
     if (view === "emergency" && !data.onboarding.emergencySummaryReviewed) {
@@ -1465,6 +1515,7 @@ export function PetHealthDashboard() {
         onboarding: { ...current.onboarding, emergencySummaryReviewed: true }
       }));
     }
+    if (view !== currentView) writeViewHistory(view, "push");
     setActiveView(view);
     setViewTransitionId((current) => current + 1);
   };
@@ -1931,7 +1982,9 @@ function AppMenu({
   onDeleteData: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const Icon = configured ? Cloud : CloudOff;
   const label = syncStatusLabel(syncStatus);
   const statusClass = syncStatusTone(syncStatus);
@@ -1941,35 +1994,85 @@ function AppMenu({
   useEffect(() => {
     if (!isOpen) return;
 
+    const mobileQuery = window.matchMedia("(max-width: 639px)");
+    const bodyScrollLocked = mobileQuery.matches;
+    const previousBodyOverflow = document.body.style.overflow;
+    if (bodyScrollLocked) document.body.style.overflow = "hidden";
+
+    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+
+    const dismissMenu = () => {
+      setIsOpen(false);
+      window.requestAnimationFrame(() => triggerRef.current?.focus());
+    };
+
     const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+      if (mobileQuery.matches) return;
+      const target = event.target as Node;
+      if (!panelRef.current?.contains(target) && !triggerRef.current?.contains(target)) dismissMenu();
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsOpen(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismissMenu();
+        return;
+      }
+      if (event.key !== "Tab" || !panelRef.current) return;
+
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!panelRef.current.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     document.addEventListener("pointerdown", handlePointerDown, true);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
+      window.cancelAnimationFrame(focusFrame);
+      if (bodyScrollLocked) document.body.style.overflow = previousBodyOverflow;
       document.removeEventListener("pointerdown", handlePointerDown, true);
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
-  const runAndClose = (action: () => void) => {
+  const closeMenu = () => {
     setIsOpen(false);
+    window.requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+
+  const runAndClose = (action: () => void) => {
+    closeMenu();
     action();
   };
 
   return (
-    <div ref={menuRef} className="relative">
+    <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={() => {
+          if (isOpen) closeMenu();
+          else setIsOpen(true);
+        }}
         aria-expanded={isOpen}
+        aria-controls="app-menu-panel"
+        aria-haspopup="dialog"
         aria-label="Open app menu"
         className="inline-flex min-h-10 cursor-pointer list-none items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-soft transition hover:border-pine/40 hover:bg-mist"
       >
@@ -1978,8 +2081,37 @@ function AppMenu({
         <ChevronDown className={`h-4 w-4 text-muted transition ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
 
-      {isOpen && <div className="z-20 mt-2 rounded-lg border border-ink/10 bg-white p-4 shadow-soft sm:absolute sm:right-0 sm:w-[28rem]">
-        <div className="space-y-5">
+      {isOpen && (
+        <>
+          <button type="button" aria-label="Close app menu" onClick={closeMenu} className="fixed inset-0 z-40 bg-ink/35 backdrop-blur-[1px] sm:hidden" />
+          <div
+            ref={panelRef}
+            id="app-menu-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="app-menu-title"
+            className="fixed inset-y-0 right-0 z-50 h-[100dvh] w-[min(92vw,24rem)] overflow-y-auto overscroll-contain border-l border-ink/10 bg-white p-4 shadow-soft sm:absolute sm:inset-y-auto sm:right-0 sm:top-full sm:mt-2 sm:h-auto sm:max-h-[min(80vh,48rem)] sm:w-[28rem] sm:rounded-lg sm:border"
+            style={{
+              paddingTop: "max(1rem, env(safe-area-inset-top))",
+              paddingBottom: "max(1rem, env(safe-area-inset-bottom))"
+            }}
+          >
+            <div className="sticky top-0 z-10 mb-4 flex items-center justify-between gap-3 border-b border-ink/10 bg-white pb-3">
+              <div>
+                <p id="app-menu-title" className="text-base font-semibold text-ink">App menu</p>
+                <p className="mt-1 text-xs text-muted">Pets, account, and household data</p>
+              </div>
+              <button
+                ref={closeButtonRef}
+                type="button"
+                onClick={closeMenu}
+                aria-label="Close app menu"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-ink/10 bg-white text-ink transition hover:border-pine/40 hover:bg-mist"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="space-y-5">
           <section>
             <p className="text-xs font-semibold uppercase tracking-normal text-muted">Pet household</p>
             <div className="mt-3 rounded-lg border border-ink/10 bg-ivory p-3">
@@ -1988,8 +2120,7 @@ function AppMenu({
                 <select
                   value={activePetId}
                   onChange={(event) => {
-                    onPetChange(event.target.value);
-                    setIsOpen(false);
+                    runAndClose(() => onPetChange(event.target.value));
                   }}
                   className="input"
                 >
@@ -2083,7 +2214,7 @@ function AppMenu({
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     event.target.value = "";
-                    setIsOpen(false);
+                    closeMenu();
                     if (file) void onImportJson(file);
                   }}
                 />
@@ -2091,8 +2222,10 @@ function AppMenu({
               {!user && <ActionButton icon={RefreshCcw} label="Reset sample" onClick={() => runAndClose(onResetSample)} variant="secondary" />}
             </div>
           </section>
-        </div>
-      </div>}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
