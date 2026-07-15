@@ -58,6 +58,10 @@ const MAX_BODY_BYTES = 200_000;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT_MAX_AI_REQUESTS = 10;
 const aiRequestBuckets = new Map<string, { count: number; resetAt: number }>();
+const allowedAiTesterEmails = (process.env.ALLOWED_TESTER_EMAILS ?? "")
+  .split(",")
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
 
 export async function POST(request: Request) {
   const contentLength = Number(request.headers.get("content-length") ?? 0);
@@ -93,6 +97,10 @@ export async function POST(request: Request) {
   const authResult = await requireAuthenticatedUser(request);
   if (!authResult.ok) {
     return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+  }
+
+  if (!isEmailAllowedForAi(authResult.email)) {
+    return NextResponse.json({ error: "This account is not enabled for AI summaries." }, { status: 403 });
   }
 
   const rateLimitKey = authResult.userId;
@@ -244,7 +252,9 @@ function makeServerLocalSummary(data: SummaryData, rangeDays: number): SummaryRe
   };
 }
 
-async function requireAuthenticatedUser(request: Request): Promise<{ ok: true; userId: string } | { ok: false; status: number; error: string }> {
+async function requireAuthenticatedUser(
+  request: Request
+): Promise<{ ok: true; userId: string; email: string } | { ok: false; status: number; error: string }> {
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
 
@@ -272,7 +282,11 @@ async function requireAuthenticatedUser(request: Request): Promise<{ ok: true; u
     return { ok: false, status: 401, error: "Invalid or expired session." };
   }
 
-  return { ok: true, userId: data.user.id };
+  return { ok: true, userId: data.user.id, email: data.user.email ?? "" };
+}
+
+function isEmailAllowedForAi(email: string) {
+  return allowedAiTesterEmails.length === 0 || allowedAiTesterEmails.includes(email.trim().toLowerCase());
 }
 
 function checkRateLimit(key: string) {

@@ -48,6 +48,7 @@ using (auth.uid() = user_id);
 create or replace function public.set_pet_memory_updated_at()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   new.updated_at = now();

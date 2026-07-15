@@ -1034,6 +1034,13 @@ export function PetHealthDashboard() {
 
   const signOut = async () => {
     if (!supabase) return;
+    if (
+      !window.confirm(
+        "Sign out and clear this browser's local pet household copy?\n\nYour synced cloud data will remain in your account. Use Delete synced data only if you want to remove the cloud copy too."
+      )
+    ) {
+      return;
+    }
     await supabase.auth.signOut();
     cloudReadyForUser.current = null;
     skipNextCloudSave.current = false;
@@ -1060,7 +1067,13 @@ export function PetHealthDashboard() {
 
   const deleteCloudAndLocalData = async () => {
     if (!supabase || !user) return;
-    if (!window.confirm("Delete the synced pet household for this account and clear this browser copy?")) return;
+    if (
+      !window.confirm(
+        "Delete this account's synced pet household from the cloud and clear this browser copy?\n\nThis removes the Supabase record for this signed-in account. Export a JSON backup first if you may need the data later."
+      )
+    ) {
+      return;
+    }
 
     setSyncStatus("saving");
     const { error } = await supabase.from("pet_memories").delete().eq("user_id", user.id);
@@ -3952,7 +3965,7 @@ function RecentView({ data }: { data: PetMemoryData }) {
       const response = await fetch("/api/summary", {
         method: "POST",
         headers,
-        body: JSON.stringify({ data, rangeDays: range, allowAi })
+        body: JSON.stringify({ data: buildSummaryRequestData(data), rangeDays: range, allowAi })
       });
       if (!response.ok) {
         const errorBody = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -4760,12 +4773,68 @@ function makeLocalSummary(data: PetMemoryData, rangeDays: TimeRange): SummaryRes
   };
 }
 
+function buildSummaryRequestData(data: PetMemoryData) {
+  return {
+    profile: {
+      name: data.profile.name,
+      species: displaySpecies(data.profile),
+      breed: displayBreed(data.profile),
+      birthDate: data.profile.birthDate,
+      conditions: data.profile.conditions,
+      allergies: data.profile.allergies
+    },
+    events: data.events.map((event) => ({
+      type: event.type,
+      date: event.date,
+      title: event.title,
+      detail: event.detail,
+      severity: event.severity,
+      bodyArea: event.bodyArea
+    })),
+    symptoms: data.symptoms.map((symptom) => ({
+      name: symptom.name,
+      severity: symptom.severity,
+      bodyArea: symptom.bodyArea,
+      dateTime: symptom.dateTime,
+      notes: symptom.notes
+    })),
+    expenses: data.expenses.map((expense) => ({
+      date: expense.date,
+      category: expense.category,
+      amount: expense.amount,
+      note: expense.note
+    })),
+    medications: data.medications.map((medication) => ({
+      name: medication.name,
+      dosage: medication.dosage,
+      frequency: medication.frequency,
+      status: medication.status
+    }))
+  };
+}
+
 function downloadJson(data: AppMemoryData) {
+  if (
+    !window.confirm(
+      "Export the full household JSON backup?\n\nThis file includes private pet health notes, vet contacts, medications, microchip/insurance fields, expenses, and reminders. Store or share it carefully."
+    )
+  ) {
+    return;
+  }
+
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   downloadBlob(blob, "pet-health-memory-household.json");
 }
 
 function downloadEmergencyHtml(data: PetMemoryData) {
+  if (
+    !window.confirm(
+      "Export this emergency summary as an HTML file?\n\nIt may include allergies, conditions, active medications, vet contacts, and recent health events. Share it only with people who should see this pet's care details."
+    )
+  ) {
+    return;
+  }
+
   const activeMeds = data.medications
     .filter((med) => med.status === "Active")
     .map((med) => `<li>${escapeHtml(`${med.name}: ${med.dosage}, ${med.frequency}`)}</li>`)
@@ -4805,7 +4874,18 @@ function downloadEmergencyHtml(data: PetMemoryData) {
   <section><h2>Recent events</h2><ul>${recent}</ul></section>
 </body>
 </html>`;
-  downloadBlob(new Blob([html], { type: "text/html" }), `${data.profile.name.toLowerCase()}-emergency-summary.html`);
+  downloadBlob(new Blob([html], { type: "text/html" }), `${safeDownloadName(data.profile.name || "pet")}-emergency-summary.html`);
+}
+
+function safeDownloadName(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 80) || "pet"
+  );
 }
 
 function downloadBlob(blob: Blob, filename: string) {
