@@ -8,6 +8,8 @@ import {
   Bell,
   CalendarClock,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   ClipboardList,
   Cloud,
@@ -44,7 +46,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { seedAppData, seedData, seedExoticPetData, STORAGE_KEY } from "../lib/seed-data";
 import {
   clearLocalPrivateFiles,
@@ -962,6 +964,8 @@ export function PetHealthDashboard() {
   const [profileEditPetId, setProfileEditPetId] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
   const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
+  const [moreToolsCanScrollLeft, setMoreToolsCanScrollLeft] = useState(false);
+  const [moreToolsCanScrollRight, setMoreToolsCanScrollRight] = useState(false);
   const cloudReadyForUser = useRef<string | null>(null);
   const loadedStoredLocalCopy = useRef(false);
   const skipNextCloudSave = useRef(false);
@@ -969,6 +973,7 @@ export function PetHealthDashboard() {
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const moreToolsNavRef = useRef<HTMLElement | null>(null);
   const historyInitialized = useRef(false);
   const data = appData.pets.find((pet) => pet.id === appData.activePetId) ?? appData.pets[0] ?? seedData;
 
@@ -1458,6 +1463,13 @@ export function PetHealthDashboard() {
   const ActiveIcon = viewMeta[currentView].icon;
   const showMoreToolsNav = currentView === "more" || moreToolIds.includes(currentView);
 
+  const updateMoreToolsOverflow = useCallback(() => {
+    const nav = moreToolsNavRef.current;
+    if (!nav) return;
+    setMoreToolsCanScrollLeft(nav.scrollLeft > 4);
+    setMoreToolsCanScrollRight(nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 4);
+  }, []);
+
   useEffect(() => {
     if (viewTransitionId === 0) return;
     const frame = window.requestAnimationFrame(() => {
@@ -1468,6 +1480,26 @@ export function PetHealthDashboard() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [viewTransitionId]);
+
+  useEffect(() => {
+    if (!showMoreToolsNav) return;
+    const frame = window.requestAnimationFrame(() => {
+      const nav = moreToolsNavRef.current;
+      const selectedItem = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+      if (nav && selectedItem) {
+        nav.scrollTo({
+          left: Math.max(0, selectedItem.offsetLeft - (nav.clientWidth - selectedItem.offsetWidth) / 2),
+          behavior: "auto",
+        });
+      }
+      updateMoreToolsOverflow();
+    });
+    window.addEventListener("resize", updateMoreToolsOverflow);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateMoreToolsOverflow);
+    };
+  }, [currentView, showMoreToolsNav, updateMoreToolsOverflow]);
 
   useEffect(() => {
     if (!ready || (isSupabaseConfigured && !user)) {
@@ -1537,7 +1569,7 @@ export function PetHealthDashboard() {
   }
 
   return (
-    <div className="print-root min-h-screen px-4 py-4 sm:px-6 lg:px-8">
+    <div className="print-root dynamic-screen app-safe-shell min-h-screen px-4 py-4 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <header className="no-print pb-5">
           <div className="rounded-xl border border-ink/10 bg-white/90 p-4 shadow-soft sm:p-5">
@@ -1632,29 +1664,47 @@ export function PetHealthDashboard() {
           </nav>
 
           {showMoreToolsNav && (
-            <nav className="mt-3 flex gap-2 overflow-x-auto rounded-xl border border-ink/10 bg-white/70 p-2" aria-label="More tools">
-              {moreToolItems.map((item) => {
-                const selected = item.view === currentView;
-                const disabled = profileSetupRequired && item.view !== "profile";
-                return (
-                  <button
-                    key={item.view}
-                    type="button"
-                    onClick={() => requestView(item.view)}
-                    disabled={disabled}
-                    className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                      selected
-                        ? "border-pine bg-pine text-white shadow-sm"
-                        : disabled
-                          ? "border-transparent bg-ivory/60 text-muted/50"
-                          : "border-transparent bg-ivory text-muted hover:border-pine/20 hover:bg-white hover:text-ink"
-                    }`}
-                  >
-                    {item.title}
-                  </button>
-                );
-              })}
-            </nav>
+            <div className="relative mt-3">
+              <nav
+                ref={moreToolsNavRef}
+                onScroll={updateMoreToolsOverflow}
+                className="flex gap-2 overflow-x-auto rounded-xl border border-ink/10 bg-white/70 p-2"
+                aria-label="More tools"
+              >
+                {moreToolItems.map((item) => {
+                  const selected = item.view === currentView;
+                  const disabled = profileSetupRequired && item.view !== "profile";
+                  return (
+                    <button
+                      key={item.view}
+                      type="button"
+                      onClick={() => requestView(item.view)}
+                      disabled={disabled}
+                      aria-current={selected ? "page" : undefined}
+                      className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                        selected
+                          ? "border-pine bg-pine text-white shadow-sm"
+                          : disabled
+                            ? "border-transparent bg-ivory/60 text-muted/50"
+                            : "border-transparent bg-ivory text-muted hover:border-pine/20 hover:bg-white hover:text-ink"
+                      }`}
+                    >
+                      {item.title}
+                    </button>
+                  );
+                })}
+              </nav>
+              {moreToolsCanScrollLeft && (
+                <span className="pointer-events-none absolute inset-y-px left-px z-10 flex w-10 items-center rounded-l-xl bg-gradient-to-r from-white via-white/95 to-transparent pl-2 text-muted sm:hidden" aria-hidden="true">
+                  <ChevronLeft className="h-4 w-4" />
+                </span>
+              )}
+              {moreToolsCanScrollRight && (
+                <span className="pointer-events-none absolute inset-y-px right-px z-10 flex w-10 items-center justify-end rounded-r-xl bg-gradient-to-l from-white via-white/95 to-transparent pr-2 text-muted sm:hidden" aria-hidden="true">
+                  <ChevronRight className="h-4 w-4" />
+                </span>
+              )}
+            </div>
           )}
         </header>
 
@@ -1763,7 +1813,7 @@ function SectionUpdated({ value }: { value: string }) {
 
 function UndoBanner({ message, onUndo, onDismiss }: { message: string; onUndo: () => void; onDismiss: () => void }) {
   return (
-    <div className="no-print fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-lg items-center gap-3 rounded-lg border border-ink/15 bg-ink px-4 py-3 text-white shadow-soft" role="status">
+    <div className="no-print safe-floating-banner fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-lg items-center gap-3 rounded-lg border border-ink/15 bg-ink px-4 py-3 text-white shadow-soft" role="status">
       <p className="min-w-0 flex-1 text-sm font-medium">{message}</p>
       <button
         type="button"
@@ -1789,7 +1839,7 @@ function UndoBanner({ message, onUndo, onDismiss }: { message: string; onUndo: (
 function AppNoticeBanner({ message, tone, onDismiss }: { message: string; tone: AppNotice["tone"]; onDismiss: () => void }) {
   return (
     <div
-      className={`no-print fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-lg items-center gap-3 rounded-lg border px-4 py-3 shadow-soft ${
+      className={`no-print safe-floating-banner fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-lg items-center gap-3 rounded-lg border px-4 py-3 shadow-soft ${
         tone === "error" ? "border-coral/30 bg-coral text-white" : "border-pine/20 bg-pine text-white"
       }`}
       role={tone === "error" ? "alert" : "status"}
@@ -2260,8 +2310,8 @@ function AuthLanding({
   ];
 
   return (
-    <div className="min-h-screen bg-ivory px-4 py-6 sm:px-6 lg:px-8">
-      <main className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-7xl items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+    <div className="dynamic-screen auth-safe-shell min-h-screen bg-ivory px-4 py-6 sm:px-6 lg:px-8">
+      <main className="auth-viewport-main mx-auto grid min-h-[calc(100vh-3rem)] max-w-7xl items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
         <section className="py-6">
           <div className="mb-8 flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-pine text-white shadow-soft">

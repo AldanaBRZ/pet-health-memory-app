@@ -39,6 +39,66 @@ body {
     #faf7f1;
 }
 
+@supports (min-height: 100dvh) {
+  body,
+  .dynamic-screen {
+    min-height: 100dvh;
+  }
+
+  .auth-viewport-main {
+    min-height: calc(100dvh - 3rem);
+  }
+}
+
+@media (max-width: 639px) {
+  button:not(.allow-compact-target) {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+
+  input[type="range"] {
+    min-height: 2.75rem;
+  }
+
+  html .input {
+    min-height: 2.75rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+
+  label:has(input[type="file"]),
+  label:has(input[type="checkbox"]),
+  label:has(input[type="radio"]) {
+    min-height: 2.75rem;
+  }
+
+  .app-safe-shell {
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
+
+  .auth-safe-shell {
+    padding-top: max(1.5rem, env(safe-area-inset-top));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
+
+  .safe-floating-banner {
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    left: max(1rem, env(safe-area-inset-left));
+  }
+}
+
 button,
 input,
 select,
