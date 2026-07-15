@@ -934,6 +934,7 @@ export function PetHealthDashboard() {
   const [appData, setAppData] = useState<AppMemoryData>(seedAppData);
   const [ready, setReady] = useState(false);
   const [activeView, setActiveView] = useState<ViewId>("overview");
+  const [viewTransitionId, setViewTransitionId] = useState(0);
   const [user, setUser] = useState<User | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(isSupabaseConfigured ? "checking" : "local");
   const [authEmail, setAuthEmail] = useState("");
@@ -948,6 +949,7 @@ export function PetHealthDashboard() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const data = appData.pets.find((pet) => pet.id === appData.activePetId) ?? appData.pets[0] ?? seedData;
 
   useEffect(() => {
@@ -1160,6 +1162,7 @@ export function PetHealthDashboard() {
       return { ...current, activePetId: petId, updatedAt: new Date().toISOString() };
     });
     setActiveView("overview");
+    setViewTransitionId((current) => current + 1);
   };
 
   const addPet = () => {
@@ -1173,6 +1176,7 @@ export function PetHealthDashboard() {
     }));
     setProfileEditPetId(pet.id);
     setActiveView("profile");
+    setViewTransitionId((current) => current + 1);
   };
 
   const removeActivePet = () => {
@@ -1189,6 +1193,7 @@ export function PetHealthDashboard() {
       updatedAt: new Date().toISOString()
     });
     setActiveView("overview");
+    setViewTransitionId((current) => current + 1);
     registerUndo(
       `${removedPet.profile.name || "Pet"} was removed.`,
       () => {
@@ -1252,6 +1257,7 @@ export function PetHealthDashboard() {
     setAppData(importedData);
     setProfileEditPetId(null);
     setActiveView("overview");
+    setViewTransitionId((current) => current + 1);
     setAuthMessage(`Imported ${importedData.pets.length} pet${importedData.pets.length === 1 ? "" : "s"} from ${file.name}.`);
     showNotice(`Imported ${importedData.pets.length} pet${importedData.pets.length === 1 ? "" : "s"} from ${file.name}.`);
   };
@@ -1429,14 +1435,27 @@ export function PetHealthDashboard() {
   const showMoreToolsNav = currentView === "more" || moreToolIds.includes(currentView);
 
   useEffect(() => {
+    if (viewTransitionId === 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      const heading = viewHeadingRef.current;
+      if (!heading) return;
+      heading.focus({ preventScroll: true });
+      heading.scrollIntoView({ behavior: "auto", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [viewTransitionId]);
+
+  useEffect(() => {
     if (!ready || !profileSetupRequired) return;
     setActiveView("profile");
+    setViewTransitionId((current) => current + 1);
     setProfileEditPetId(data.id);
   }, [data.id, profileSetupRequired, ready]);
 
   const requestView = (view: ViewId) => {
     if (profileSetupRequired && view !== "profile") {
       setActiveView("profile");
+      setViewTransitionId((current) => current + 1);
       setProfileEditPetId(data.id);
       return;
     }
@@ -1447,6 +1466,7 @@ export function PetHealthDashboard() {
       }));
     }
     setActiveView(view);
+    setViewTransitionId((current) => current + 1);
   };
 
   if (isSupabaseConfigured && !user) {
@@ -1589,10 +1609,10 @@ export function PetHealthDashboard() {
 
         <main className="mt-6">
           <div className="no-print mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-muted">
+            <h2 ref={viewHeadingRef} tabIndex={-1} className="scroll-mt-4 flex items-center gap-2 text-sm font-semibold text-muted outline-none">
               <ActiveIcon className="h-4 w-4" aria-hidden="true" />
               <span>{viewMeta[currentView].label}</span>
-            </div>
+            </h2>
             <SaveStateIndicator syncStatus={syncStatus} updatedAt={data.updatedAt} />
           </div>
 
@@ -4535,9 +4555,10 @@ function ExpenseView({
     value: data.expenses.filter((expense) => expense.category === category).reduce((sum, expense) => sum + expense.amount, 0),
     color: categoryTone[category]
   }));
+  const sortedExpenses = [...data.expenses].sort(sortByDateDesc("date"));
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+    <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
       <Panel>
         <SectionTitle icon={BadgeDollarSign} title="Add expense" />
         <div className="mt-5 grid gap-4">
@@ -4579,7 +4600,7 @@ function ExpenseView({
         </div>
       </Panel>
 
-      <div className="space-y-5">
+      <div className="min-w-0 space-y-5">
         <Panel>
           <SectionTitle icon={LineChart} title="Costs by category" />
           {data.expenses.length > 0 ? (
@@ -4597,33 +4618,52 @@ function ExpenseView({
         <Panel>
           <SectionTitle icon={ClipboardList} title="Expense ledger" />
           {data.expenses.length > 0 ? (
-          <div className="mt-5 overflow-hidden rounded-lg border border-ink/10">
-            <table className="w-full border-collapse bg-white/80 text-sm">
-              <thead className="bg-mist text-left text-xs uppercase tracking-normal text-muted">
-                <tr>
-                  <th className="px-3 py-3 font-semibold">Date</th>
-                  <th className="px-3 py-3 font-semibold">Category</th>
-                  <th className="px-3 py-3 font-semibold">Vendor</th>
-                  <th className="px-3 py-3 text-right font-semibold">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...data.expenses].sort(sortByDateDesc("date")).map((expense) => (
-                  <tr key={expense.id} className="border-t border-ink/10">
-                    <td className="px-3 py-3 text-muted">{formatDate(expense.date)}</td>
-                    <td className="px-3 py-3">
-                      <span className="rounded-lg bg-oat px-2 py-1 text-xs font-semibold text-ink">{expense.category}</span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <p className="font-medium text-ink">{expense.vendor}</p>
-                      <p className="mt-1 text-xs text-muted">{expense.note}</p>
-                    </td>
-                    <td className="px-3 py-3 text-right font-semibold text-ink">{currency(expense.amount)}</td>
-                  </tr>
+            <>
+              <div className="mt-5 space-y-3 sm:hidden">
+                {sortedExpenses.map((expense) => (
+                  <article key={expense.id} className="min-w-0 rounded-lg border border-ink/10 bg-white/80 p-4">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-muted">{formatDate(expense.date)}</p>
+                        <h3 className="mt-1 break-words text-sm font-semibold text-ink">{expense.vendor}</h3>
+                      </div>
+                      <p className="shrink-0 text-sm font-semibold text-ink">{currency(expense.amount)}</p>
+                    </div>
+                    <div className="mt-3 flex min-w-0 flex-wrap items-start gap-2">
+                      <span className="shrink-0 rounded-lg bg-oat px-2 py-1 text-xs font-semibold text-ink">{expense.category}</span>
+                      {expense.note && <p className="min-w-0 flex-1 break-words text-xs leading-5 text-muted">{expense.note}</p>}
+                    </div>
+                  </article>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+              <div className="mt-5 hidden overflow-hidden rounded-lg border border-ink/10 sm:block">
+                <table className="w-full border-collapse bg-white/80 text-sm">
+                  <thead className="bg-mist text-left text-xs uppercase tracking-normal text-muted">
+                    <tr>
+                      <th className="px-3 py-3 font-semibold">Date</th>
+                      <th className="px-3 py-3 font-semibold">Category</th>
+                      <th className="px-3 py-3 font-semibold">Vendor</th>
+                      <th className="px-3 py-3 text-right font-semibold">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedExpenses.map((expense) => (
+                      <tr key={expense.id} className="border-t border-ink/10">
+                        <td className="px-3 py-3 text-muted">{formatDate(expense.date)}</td>
+                        <td className="px-3 py-3">
+                          <span className="rounded-lg bg-oat px-2 py-1 text-xs font-semibold text-ink">{expense.category}</span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <p className="font-medium text-ink">{expense.vendor}</p>
+                          <p className="mt-1 text-xs text-muted">{expense.note}</p>
+                        </td>
+                        <td className="px-3 py-3 text-right font-semibold text-ink">{currency(expense.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
             <p className="mt-5 text-sm leading-6 text-muted">Saved costs will appear here in date order with their category and provider.</p>
           )}
@@ -5849,7 +5889,7 @@ function DocumentsView({
 }
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-lg border border-ink/10 bg-white/85 p-5 shadow-soft backdrop-blur ${className}`}>{children}</section>;
+  return <section className={`min-w-0 rounded-lg border border-ink/10 bg-white/85 p-5 shadow-soft backdrop-blur ${className}`}>{children}</section>;
 }
 
 function SectionTitle({ icon: Icon, title }: { icon: LucideIcon; title: string }) {
