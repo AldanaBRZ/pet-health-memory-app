@@ -555,6 +555,16 @@ export const seedData: PetMemoryData = {
       }
     ]
   },
+  onboarding: {
+    medicationsReviewed: false,
+    remindersReviewed: false,
+    emergencySummaryReviewed: false
+  },
+  sectionUpdatedAt: {
+    profile: "2026-07-10T10:00:00",
+    contacts: "2026-07-10T10:00:00",
+    medications: "2026-07-10T10:00:00"
+  },
   updatedAt: "2026-07-10T10:00:00"
 };
 
@@ -745,6 +755,16 @@ export const seedExoticPetData: PetMemoryData = {
         notes: "Bright, active, and steady weight at wellness exam."
       }
     ]
+  },
+  onboarding: {
+    medicationsReviewed: false,
+    remindersReviewed: false,
+    emergencySummaryReviewed: false
+  },
+  sectionUpdatedAt: {
+    profile: "2026-07-10T10:00:00",
+    contacts: "2026-07-10T10:00:00",
+    medications: "2026-07-10T10:00:00"
   },
   updatedAt: "2026-07-10T10:00:00"
 };

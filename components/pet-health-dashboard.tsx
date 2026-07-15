@@ -55,7 +55,9 @@ import type {
   Medication,
   PetLongevityData,
   PetMemoryData,
+  PetOnboardingState,
   PetProfile,
+  PetSectionTimestamps,
   PreventionCategory,
   PreventionItem,
   PreventionStatus,
@@ -89,6 +91,22 @@ type TimeRange = 7 | 30 | 90;
 type SyncStatus = "local" | "checking" | "signed-out" | "loading-cloud" | "saving" | "synced" | "conflict" | "error";
 type WeightUnit = "kg" | "lb";
 type ProfileErrorField = "name" | "species" | "breed" | "customBreed" | "birthDate" | "sex" | "weightKg";
+type PetSection = keyof PetSectionTimestamps;
+type CommitPetMemory = (
+  updater: (current: PetMemoryData) => PetMemoryData,
+  sections?: PetSection | PetSection[],
+  petId?: string
+) => void;
+type RegisterUndo = (message: string, restore: () => void) => void;
+type UndoAction = { id: string; message: string; restore: () => void };
+type AppNotice = { id: string; message: string; tone: "info" | "error" };
+
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+const emptyOnboarding: PetOnboardingState = {
+  medicationsReviewed: false,
+  remindersReviewed: false,
+  emergencySummaryReviewed: false
+};
 
 const viewMeta: Record<ViewId, ViewMeta> = {
   overview: { label: "Today", icon: Home },
@@ -594,11 +612,19 @@ const emptyRoutine = (): HabitRoutine => ({
 });
 
 function normalizePetMemoryData(value: Partial<PetMemoryData>, fallback: PetMemoryData = seedData): PetMemoryData {
+  const updatedAt = value.updatedAt ?? fallback.updatedAt;
   return {
     ...fallback,
     ...value,
     id: value.id ?? fallback.id ?? newId("pet"),
-    profile: { ...fallback.profile, ...value.profile },
+    profile: {
+      ...fallback.profile,
+      ...value.profile,
+      allergies: value.profile?.allergies ?? fallback.profile.allergies,
+      conditions: value.profile?.conditions ?? fallback.profile.conditions,
+      careInstructions: value.profile?.careInstructions ?? fallback.profile.careInstructions,
+      vets: value.profile?.vets ?? fallback.profile.vets
+    },
     events: value.events ?? fallback.events,
     medications: value.medications ?? fallback.medications,
     symptoms: value.symptoms ?? fallback.symptoms,
@@ -614,16 +640,25 @@ function normalizePetMemoryData(value: Partial<PetMemoryData>, fallback: PetMemo
       watchlist: value.longevity?.watchlist ?? fallback.longevity.watchlist,
       qualityOfLifeNotes: value.longevity?.qualityOfLifeNotes ?? fallback.longevity.qualityOfLifeNotes
     },
-    updatedAt: value.updatedAt ?? fallback.updatedAt
+    onboarding: {
+      ...emptyOnboarding,
+      ...value.onboarding
+    },
+    sectionUpdatedAt: {
+      profile: value.sectionUpdatedAt?.profile ?? updatedAt,
+      contacts: value.sectionUpdatedAt?.contacts ?? updatedAt,
+      medications: value.sectionUpdatedAt?.medications ?? updatedAt
+    },
+    updatedAt
   };
 }
 
-function normalizeAppMemoryData(value: unknown): AppMemoryData {
+function normalizeAppMemoryData(value: unknown, includeDemoCompanion = true): AppMemoryData {
   if (isRecord(value) && Array.isArray(value.pets)) {
     const normalizedPets = value.pets.length
       ? value.pets.map((pet, index) => normalizePetMemoryData((isRecord(pet) ? pet : {}) as Partial<PetMemoryData>, seedAppData.pets[index] ?? seedData))
       : seedAppData.pets;
-    const pets = withDemoExoticPet(normalizedPets);
+    const pets = includeDemoCompanion ? withDemoExoticPet(normalizedPets) : normalizedPets;
     const requestedActivePetId = typeof value.activePetId === "string" ? value.activePetId : "";
     const activePetId = pets.some((pet) => pet.id === requestedActivePetId) ? requestedActivePetId : pets[0]?.id ?? seedData.id;
     return {
@@ -634,7 +669,7 @@ function normalizeAppMemoryData(value: unknown): AppMemoryData {
   }
 
   const pet = normalizePetMemoryData((isRecord(value) ? value : {}) as Partial<PetMemoryData>);
-  const pets = withDemoExoticPet([pet]);
+  const pets = includeDemoCompanion ? withDemoExoticPet([pet]) : [pet];
   return {
     pets,
     activePetId: pet.id,
@@ -659,6 +694,107 @@ function isDemoMiloPet(pet: PetMemoryData) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasStringFields(value: Record<string, unknown>, fields: string[]) {
+  return fields.every((field) => typeof value[field] === "string");
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isRecordArray(value: unknown, validator: (item: Record<string, unknown>) => boolean) {
+  return Array.isArray(value) && value.every((item) => isRecord(item) && validator(item));
+}
+
+function validateImportedPet(value: unknown, index: number) {
+  if (!isRecord(value)) return `Pet ${index + 1} is not a valid record.`;
+  if (typeof value.id !== "string" || !value.id.trim()) return `Pet ${index + 1} is missing an ID.`;
+  if (!isRecord(value.profile)) return `Pet ${index + 1} is missing its profile.`;
+
+  const profile = value.profile;
+  if (!hasStringFields(profile, ["name", "species", "breed", "birthDate", "sex", "microchip", "insurance"])) {
+    return `Pet ${index + 1} has invalid profile fields.`;
+  }
+  if (typeof profile.weightKg !== "number" || !Number.isFinite(profile.weightKg)) {
+    return `Pet ${index + 1} has an invalid weight.`;
+  }
+  if (!isStringArray(profile.allergies) || !isStringArray(profile.conditions) || !isStringArray(profile.careInstructions)) {
+    return `Pet ${index + 1} has invalid medical notes.`;
+  }
+  if (
+    !isRecordArray(profile.vets, (vet) =>
+      hasStringFields(vet, ["id", "clinic", "clinician", "role", "phone", "email", "address"])
+    )
+  ) {
+    return `Pet ${index + 1} has invalid vet contacts.`;
+  }
+
+  const collectionChecks: Array<[string, (item: Record<string, unknown>) => boolean]> = [
+    ["events", (item) => hasStringFields(item, ["id", "type", "date", "title", "detail", "source"])],
+    ["medications", (item) => hasStringFields(item, ["id", "name", "dosage", "frequency", "startDate", "status", "refillNotes"])],
+    [
+      "symptoms",
+      (item) =>
+        hasStringFields(item, ["id", "name", "bodyArea", "dateTime", "notes"]) &&
+        typeof item.severity === "number" &&
+        isStringArray(item.files)
+    ],
+    [
+      "expenses",
+      (item) => hasStringFields(item, ["id", "date", "category", "vendor", "note"]) && typeof item.amount === "number"
+    ],
+    ["weights", (item) => typeof item.date === "string" && typeof item.kg === "number"],
+    [
+      "reminders",
+      (item) => hasStringFields(item, ["id", "title", "type", "dueDate", "notes"]) && typeof item.done === "boolean"
+    ],
+    ["documents", (item) => hasStringFields(item, ["id", "title", "date", "type", "source", "notes"])]
+  ];
+
+  for (const [field, validator] of collectionChecks) {
+    if (!isRecordArray(value[field], validator)) return `Pet ${index + 1} has an invalid ${field} list.`;
+  }
+
+  if (!isRecord(value.longevity)) return `Pet ${index + 1} is missing longevity data.`;
+  for (const field of ["prevention", "routines", "watchlist", "qualityOfLifeNotes"]) {
+    if (!isRecordArray(value.longevity[field], () => true)) return `Pet ${index + 1} has invalid longevity data.`;
+  }
+
+  if (typeof value.updatedAt !== "string") return `Pet ${index + 1} is missing its update timestamp.`;
+  return null;
+}
+
+function parseImportedMemory(value: unknown): { data?: AppMemoryData; error?: string } {
+  let candidate: unknown = value;
+
+  if (isRecord(value) && !Array.isArray(value.pets) && isRecord(value.profile)) {
+    candidate = {
+      pets: [value],
+      activePetId: typeof value.id === "string" ? value.id : "",
+      updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString()
+    };
+  }
+
+  if (!isRecord(candidate) || !Array.isArray(candidate.pets)) {
+    return { error: "This is not a Pet Health Memory JSON backup." };
+  }
+  if (candidate.pets.length === 0 || candidate.pets.length > 25) {
+    return { error: "A backup must contain between 1 and 25 pets." };
+  }
+
+  const petIds = new Set<string>();
+  for (let index = 0; index < candidate.pets.length; index += 1) {
+    const pet = candidate.pets[index];
+    const error = validateImportedPet(pet, index);
+    if (error) return { error };
+    const petId = (pet as Record<string, unknown>).id as string;
+    if (petIds.has(petId)) return { error: "The backup contains duplicate pet IDs." };
+    petIds.add(petId);
+  }
+
+  return { data: normalizeAppMemoryData(candidate, false) };
 }
 
 function newestPetTimestamp(pets: PetMemoryData[]) {
@@ -702,6 +838,12 @@ function createBlankPetMemory(): PetMemoryData {
       watchlist: [],
       qualityOfLifeNotes: []
     },
+    onboarding: { ...emptyOnboarding },
+    sectionUpdatedAt: {
+      profile: now,
+      contacts: now,
+      medications: now
+    },
     updatedAt: now
   };
 }
@@ -739,10 +881,14 @@ export function PetHealthDashboard() {
   const [authPassword, setAuthPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [profileEditPetId, setProfileEditPetId] = useState<string | null>(null);
+  const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
+  const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
   const cloudReadyForUser = useRef<string | null>(null);
   const loadedStoredLocalCopy = useRef(false);
   const skipNextCloudSave = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const data = appData.pets.find((pet) => pet.id === appData.activePetId) ?? appData.pets[0] ?? seedData;
 
   useEffect(() => {
@@ -795,6 +941,8 @@ export function PetHealthDashboard() {
       mounted = false;
       authListener.subscription.unsubscribe();
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
     };
   }, []);
 
@@ -885,16 +1033,57 @@ export function PetHealthDashboard() {
     }, 900);
   }, [appData, ready, user]);
 
-  const commit = (updater: (current: PetMemoryData) => PetMemoryData) => {
+  const commit: CommitPetMemory = (updater, sections, petId) => {
     setAppData((current) => {
       const updatedAt = new Date().toISOString();
-      const activePetId = current.activePetId;
+      const targetPetId = petId ?? current.activePetId;
+      const changedSections = sections ? (Array.isArray(sections) ? sections : [sections]) : [];
       return {
         ...current,
-        pets: current.pets.map((pet) => (pet.id === activePetId ? { ...updater(pet), updatedAt } : pet)),
+        pets: current.pets.map((pet) => {
+          if (pet.id !== targetPetId) return pet;
+          const updatedPet = updater(pet);
+          const sectionUpdatedAt = changedSections.reduce<PetSectionTimestamps>(
+            (timestamps, section) => ({ ...timestamps, [section]: updatedAt }),
+            { ...pet.sectionUpdatedAt }
+          );
+          return { ...updatedPet, sectionUpdatedAt, updatedAt };
+        }),
         updatedAt
       };
     });
+  };
+
+  const registerUndo: RegisterUndo = (message, restore) => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoAction({ id: newId("undo"), message, restore });
+    undoTimer.current = setTimeout(() => {
+      setUndoAction(null);
+      undoTimer.current = null;
+    }, 8000);
+  };
+
+  const undoLastAction = () => {
+    if (!undoAction) return;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoAction(null);
+    undoTimer.current = null;
+    undoAction.restore();
+  };
+
+  const dismissUndo = () => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = null;
+    setUndoAction(null);
+  };
+
+  const showNotice = (message: string, tone: AppNotice["tone"] = "info") => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setAppNotice({ id: newId("notice"), message, tone });
+    noticeTimer.current = setTimeout(() => {
+      setAppNotice(null);
+      noticeTimer.current = null;
+    }, 6000);
   };
 
   const setActivePetId = (petId: string) => {
@@ -922,6 +1111,9 @@ export function PetHealthDashboard() {
     if (appData.pets.length <= 1) return;
     if (!window.confirm(`Remove ${data.profile.name || "this pet"} from this household? Export JSON first if you need a backup.`)) return;
 
+    const removedPet = data;
+    const removedIndex = appData.pets.findIndex((pet) => pet.id === data.id);
+    const previousActivePetId = appData.activePetId;
     const remainingPets = appData.pets.filter((pet) => pet.id !== data.id);
     setAppData({
       pets: remainingPets,
@@ -929,6 +1121,67 @@ export function PetHealthDashboard() {
       updatedAt: new Date().toISOString()
     });
     setActiveView("overview");
+    registerUndo(`${removedPet.profile.name || "Pet"} was removed.`, () => {
+      setAppData((current) => {
+        if (current.pets.some((pet) => pet.id === removedPet.id)) return current;
+        const pets = [...current.pets];
+        pets.splice(Math.max(0, Math.min(removedIndex, pets.length)), 0, removedPet);
+        return {
+          ...current,
+          pets,
+          activePetId: previousActivePetId,
+          updatedAt: new Date().toISOString()
+        };
+      });
+    });
+  };
+
+  const importJson = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".json")) {
+      setAuthMessage("Choose a .json backup exported by Pet Health Memory.");
+      showNotice("Choose a .json backup exported by Pet Health Memory.", "error");
+      return;
+    }
+    if (file.size > MAX_IMPORT_BYTES) {
+      setAuthMessage("That backup is larger than the 5 MB import limit.");
+      showNotice("That backup is larger than the 5 MB import limit.", "error");
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await file.text()) as unknown;
+    } catch {
+      setAuthMessage("That file is not valid JSON and was not imported.");
+      showNotice("That file is not valid JSON and was not imported.", "error");
+      return;
+    }
+
+    const result = parseImportedMemory(parsed);
+    if (!result.data) {
+      setAuthMessage(result.error ?? "That backup could not be imported.");
+      showNotice(result.error ?? "That backup could not be imported.", "error");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Import ${result.data.pets.length} pet${result.data.pets.length === 1 ? "" : "s"} from ${file.name}?\n\nThis replaces the household currently open in this account or browser. Export the current household first if you need a backup.`
+      )
+    ) {
+      return;
+    }
+
+    const importedAt = new Date().toISOString();
+    const importedData: AppMemoryData = {
+      ...result.data,
+      pets: result.data.pets.map((pet) => (pet.id === result.data?.activePetId ? { ...pet, updatedAt: importedAt } : pet)),
+      updatedAt: importedAt
+    };
+    setAppData(importedData);
+    setProfileEditPetId(null);
+    setActiveView("overview");
+    setAuthMessage(`Imported ${importedData.pets.length} pet${importedData.pets.length === 1 ? "" : "s"} from ${file.name}.`);
+    showNotice(`Imported ${importedData.pets.length} pet${importedData.pets.length === 1 ? "" : "s"} from ${file.name}.`);
   };
 
   const sendMagicLink = async (event?: React.FormEvent<HTMLFormElement>) => {
@@ -1112,6 +1365,12 @@ export function PetHealthDashboard() {
       setProfileEditPetId(data.id);
       return;
     }
+    if (view === "emergency" && !data.onboarding.emergencySummaryReviewed) {
+      commit((current) => ({
+        ...current,
+        onboarding: { ...current.onboarding, emergencySummaryReviewed: true }
+      }));
+    }
     setActiveView(view);
   };
 
@@ -1182,6 +1441,7 @@ export function PetHealthDashboard() {
                 onAddPet={addPet}
                 onRemovePet={removeActivePet}
                 onExportJson={() => downloadJson(appData)}
+                onImportJson={importJson}
                 onResetSample={() => {
                   clearLocalPetMemory();
                   loadedStoredLocalCopy.current = false;
@@ -1249,9 +1509,12 @@ export function PetHealthDashboard() {
         </header>
 
         <main className="mt-6">
-          <div className="no-print mb-4 flex items-center gap-2 text-sm font-semibold text-muted">
-            <ActiveIcon className="h-4 w-4" aria-hidden="true" />
-            <span>{viewMeta[currentView].label}</span>
+          <div className="no-print mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 text-sm font-semibold text-muted">
+              <ActiveIcon className="h-4 w-4" aria-hidden="true" />
+              <span>{viewMeta[currentView].label}</span>
+            </div>
+            <SaveStateIndicator syncStatus={syncStatus} updatedAt={data.updatedAt} />
           </div>
 
           {profileSetupRequired && (
@@ -1273,10 +1536,11 @@ export function PetHealthDashboard() {
               startInEditMode={profileSetupRequired || profileEditPetId === data.id}
               setupRequired={profileSetupRequired}
               onStartInEditModeConsumed={() => setProfileEditPetId(null)}
+              registerUndo={registerUndo}
             />
           )}
           {currentView === "timeline" && <TimelineView data={data} commit={commit} />}
-          {currentView === "meds" && <MedicationView data={data} commit={commit} />}
+          {currentView === "meds" && <MedicationView data={data} commit={commit} registerUndo={registerUndo} />}
           {currentView === "symptoms" && <SymptomView data={data} commit={commit} />}
           {currentView === "expenses" && <ExpenseView data={data} commit={commit} />}
           {currentView === "trends" && <TrendsView data={data} metrics={metrics} commit={commit} />}
@@ -1285,6 +1549,97 @@ export function PetHealthDashboard() {
           {currentView === "emergency" && <EmergencyView data={data} />}
         </main>
       </div>
+      {undoAction && <UndoBanner message={undoAction.message} onUndo={undoLastAction} onDismiss={dismissUndo} />}
+      {appNotice && (
+        <AppNoticeBanner
+          message={appNotice.message}
+          tone={appNotice.tone}
+          onDismiss={() => {
+            if (noticeTimer.current) clearTimeout(noticeTimer.current);
+            noticeTimer.current = null;
+            setAppNotice(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SaveStateIndicator({ syncStatus, updatedAt }: { syncStatus: SyncStatus; updatedAt: string }) {
+  const isBusy = syncStatus === "saving" || syncStatus === "checking" || syncStatus === "loading-cloud";
+  const hasSyncIssue = syncStatus === "error" || syncStatus === "conflict";
+  const Icon = isBusy ? RefreshCcw : hasSyncIssue ? CloudOff : CheckCircle2;
+  const label = isBusy
+    ? syncStatus === "saving"
+      ? "Saving changes"
+      : "Checking saved data"
+    : hasSyncIssue
+      ? "Saved locally; sync needs attention"
+      : syncStatus === "synced"
+        ? "All changes synced"
+        : "Saved in this browser";
+
+  return (
+    <div
+      className={`inline-flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${
+        hasSyncIssue ? "border-coral/20 bg-coral/5 text-coral" : "border-ink/10 bg-white/75 text-muted"
+      }`}
+      aria-live="polite"
+    >
+      <Icon className={`h-3.5 w-3.5 shrink-0 ${isBusy ? "animate-spin" : ""}`} aria-hidden="true" />
+      <span>{label}</span>
+      <span className="hidden text-muted/70 sm:inline">· {formatDate(updatedAt, true)}</span>
+    </div>
+  );
+}
+
+function SectionUpdated({ value }: { value: string }) {
+  return <p className="text-xs font-medium text-muted">Last updated {formatDate(value, true)}</p>;
+}
+
+function UndoBanner({ message, onUndo, onDismiss }: { message: string; onUndo: () => void; onDismiss: () => void }) {
+  return (
+    <div className="no-print fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-lg items-center gap-3 rounded-lg border border-ink/15 bg-ink px-4 py-3 text-white shadow-soft" role="status">
+      <p className="min-w-0 flex-1 text-sm font-medium">{message}</p>
+      <button
+        type="button"
+        onClick={onUndo}
+        className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:bg-mist"
+      >
+        <RefreshCcw className="h-4 w-4" aria-hidden="true" />
+        Undo
+      </button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/75 transition hover:bg-white/10 hover:text-white"
+        aria-label="Dismiss undo message"
+        title="Dismiss"
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+function AppNoticeBanner({ message, tone, onDismiss }: { message: string; tone: AppNotice["tone"]; onDismiss: () => void }) {
+  return (
+    <div
+      className={`no-print fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-lg items-center gap-3 rounded-lg border px-4 py-3 shadow-soft ${
+        tone === "error" ? "border-coral/30 bg-coral text-white" : "border-pine/20 bg-pine text-white"
+      }`}
+      role={tone === "error" ? "alert" : "status"}
+    >
+      <p className="min-w-0 flex-1 text-sm font-medium">{message}</p>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/75 transition hover:bg-white/10 hover:text-white"
+        aria-label="Dismiss message"
+        title="Dismiss"
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
     </div>
   );
 }
@@ -1309,6 +1664,7 @@ function AppMenu({
   onAddPet,
   onRemovePet,
   onExportJson,
+  onImportJson,
   onResetSample,
   onSignOut,
   onSyncNow,
@@ -1324,6 +1680,7 @@ function AppMenu({
   onAddPet: () => void;
   onRemovePet: () => void;
   onExportJson: () => void;
+  onImportJson: (file: File) => void;
   onResetSample: () => void;
   onSignOut: () => void;
   onSyncNow: () => void;
@@ -1472,6 +1829,21 @@ function AppMenu({
             <p className="text-xs font-semibold uppercase tracking-normal text-muted">Data</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <ActionButton icon={Download} label="Export JSON" onClick={() => runAndClose(onExportJson)} variant="secondary" />
+              <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:border-pine/40 hover:bg-mist">
+                <Upload className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>Import JSON</span>
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    setIsOpen(false);
+                    if (file) void onImportJson(file);
+                  }}
+                />
+              </label>
               {!user && <ActionButton icon={RefreshCcw} label="Reset sample" onClick={() => runAndClose(onResetSample)} variant="secondary" />}
             </div>
           </section>
@@ -1736,6 +2108,131 @@ function QuickActionRail({ setActiveView }: { setActiveView: (view: ViewId) => v
   );
 }
 
+function OnboardingChecklist({
+  data,
+  commit,
+  setActiveView
+}: {
+  data: PetMemoryData;
+  commit: CommitPetMemory;
+  setActiveView: (view: ViewId) => void;
+}) {
+  const items = [
+    {
+      id: "medications",
+      title: "Review medications",
+      detail: data.medications.length
+        ? `${data.medications.length} medication${data.medications.length === 1 ? "" : "s"} recorded.`
+        : data.onboarding.medicationsReviewed
+          ? "Reviewed; no current medications listed."
+          : "Add current medications, supplements, and refill notes.",
+      complete: data.medications.length > 0 || data.onboarding.medicationsReviewed,
+      view: "meds" as ViewId,
+      skipLabel: data.medications.length === 0 && !data.onboarding.medicationsReviewed ? "No current meds" : undefined,
+      onSkip: () =>
+        commit((current) => ({
+          ...current,
+          onboarding: { ...current.onboarding, medicationsReviewed: true }
+        }))
+    },
+    {
+      id: "vets",
+      title: "Add a vet contact",
+      detail: data.profile.vets.length
+        ? `${data.profile.vets.length} care contact${data.profile.vets.length === 1 ? "" : "s"} ready for summaries.`
+        : "Add a primary vet or specialist for stressful visits.",
+      complete: data.profile.vets.length > 0,
+      view: "profile" as ViewId
+    },
+    {
+      id: "reminders",
+      title: "Review reminders",
+      detail: data.reminders.length
+        ? `${data.reminders.length} reminder${data.reminders.length === 1 ? "" : "s"} recorded.`
+        : data.onboarding.remindersReviewed
+          ? "Reviewed; no reminder needed yet."
+          : "Add the next appointment, refill, or follow-up.",
+      complete: data.reminders.length > 0 || data.onboarding.remindersReviewed,
+      view: "care" as ViewId,
+      skipLabel: data.reminders.length === 0 && !data.onboarding.remindersReviewed ? "Nothing due yet" : undefined,
+      onSkip: () =>
+        commit((current) => ({
+          ...current,
+          onboarding: { ...current.onboarding, remindersReviewed: true }
+        }))
+    },
+    {
+      id: "emergency",
+      title: "Review emergency summary",
+      detail: data.onboarding.emergencySummaryReviewed
+        ? "Summary reviewed for a future vet conversation."
+        : "Check conditions, allergies, medications, and contact details.",
+      complete: data.onboarding.emergencySummaryReviewed,
+      view: "emergency" as ViewId
+    }
+  ];
+  const completedCount = items.filter((item) => item.complete).length;
+
+  if (completedCount === items.length) return null;
+
+  return (
+    <Panel className="border-pine/15 bg-mist/55">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-pine shadow-sm">
+            <ListChecks className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold text-ink">Finish care setup</h2>
+            <p className="mt-1 text-sm leading-6 text-muted">A short checklist to make this pet memory useful when care gets stressful.</p>
+          </div>
+        </div>
+        <div className="shrink-0 sm:text-right">
+          <p className="text-sm font-semibold text-pine">{completedCount} of {items.length} ready</p>
+          <div className="mt-2 h-2 w-32 overflow-hidden rounded-lg bg-white" aria-hidden="true">
+            <div className="h-full rounded-lg bg-pine transition-all" style={{ width: `${(completedCount / items.length) * 100}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        {items.map((item) => (
+          <div key={item.id} className="flex min-h-28 flex-col justify-between gap-3 rounded-lg border border-ink/10 bg-white/85 p-4">
+            <div className="flex items-start gap-3">
+              <span
+                className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                  item.complete ? "bg-pine text-white" : "border border-ink/15 bg-ivory text-muted"
+                }`}
+              >
+                {item.complete ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <span className="h-2 w-2 rounded-full bg-current" />}
+              </span>
+              <div>
+                <h3 className="text-sm font-semibold text-ink">{item.title}</h3>
+                <p className="mt-1 text-xs leading-5 text-muted">{item.detail}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {item.skipLabel && item.onSkip && (
+                <button type="button" onClick={item.onSkip} className="px-2 py-1 text-xs font-semibold text-muted transition hover:text-ink">
+                  {item.skipLabel}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveView(item.view)}
+                className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-pine/15 bg-mist px-3 py-1.5 text-xs font-semibold text-pine transition hover:border-pine/35 hover:bg-sage/30"
+              >
+                {item.complete ? "Review" : "Open"}
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
 function OverviewView({
   data,
   metrics,
@@ -1744,7 +2241,7 @@ function OverviewView({
 }: {
   data: PetMemoryData;
   metrics: ReturnType<typeof buildMetrics>;
-  commit: (updater: (current: PetMemoryData) => PetMemoryData) => void;
+  commit: CommitPetMemory;
   setActiveView: (view: ViewId) => void;
 }) {
   const [reminder, setReminder] = useState<Reminder>(emptyReminder);
@@ -1777,6 +2274,7 @@ function OverviewView({
 
   return (
     <div className="space-y-6">
+      <OnboardingChecklist data={data} commit={commit} setActiveView={setActiveView} />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_380px]">
         <section className="rounded-xl border border-pine bg-pine p-5 text-white shadow-soft sm:p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -2249,13 +2747,15 @@ function ProfileView({
   commit,
   startInEditMode = false,
   setupRequired = false,
-  onStartInEditModeConsumed
+  onStartInEditModeConsumed,
+  registerUndo
 }: {
   data: PetMemoryData;
-  commit: (updater: (current: PetMemoryData) => PetMemoryData) => void;
+  commit: CommitPetMemory;
   startInEditMode?: boolean;
   setupRequired?: boolean;
   onStartInEditModeConsumed?: () => void;
+  registerUndo: RegisterUndo;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draftProfile, setDraftProfile] = useState<PetProfile>(() => cloneProfile(data.profile));
@@ -2314,7 +2814,34 @@ function ProfileView({
       setSaveAttempted(true);
       return;
     }
-    commit((current) => ({ ...current, profile: cleanProfile(cloneProfile(draftProfile)) }));
+    const nextProfile = cleanProfile(cloneProfile(draftProfile));
+    const removedVets = data.profile.vets
+      .map((vet, index) => ({ vet: { ...vet }, index }))
+      .filter(({ vet }) => !nextProfile.vets.some((item) => item.id === vet.id));
+    const contactsChanged = JSON.stringify(data.profile.vets) !== JSON.stringify(nextProfile.vets);
+    commit(
+      (current) => ({ ...current, profile: nextProfile }),
+      contactsChanged ? ["profile", "contacts"] : "profile"
+    );
+    if (removedVets.length > 0) {
+      registerUndo(
+        `${removedVets.length} vet contact${removedVets.length === 1 ? " was" : "s were"} removed.`,
+        () =>
+          commit(
+            (current) => {
+              const vets = [...current.profile.vets];
+              removedVets.forEach(({ vet, index }) => {
+                if (!vets.some((item) => item.id === vet.id)) {
+                  vets.splice(Math.max(0, Math.min(index, vets.length)), 0, vet);
+                }
+              });
+              return { ...current, profile: { ...current.profile, vets } };
+            },
+            "contacts",
+            data.id
+          )
+      );
+    }
     setIsEditing(false);
     setSaveAttempted(false);
   };
@@ -2435,7 +2962,10 @@ function ProfileView({
       </div>
 
       <Panel>
-        <SectionTitle icon={PawPrint} title="Pet profile" />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <SectionTitle icon={PawPrint} title="Pet profile" />
+          <SectionUpdated value={data.sectionUpdatedAt.profile} />
+        </div>
         <div className="mt-5 grid gap-4">
           <div className="grid gap-4 md:grid-cols-2 md:items-start">
             <Field label="Name" required error={showValidation ? profileErrors.name : undefined}>
@@ -2655,7 +3185,10 @@ function ProfileView({
       </Panel>
 
       <Panel>
-        <SectionTitle icon={ClipboardList} title="Medical notes" />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <SectionTitle icon={ClipboardList} title="Medical notes" />
+          <SectionUpdated value={data.sectionUpdatedAt.profile} />
+        </div>
         <div className="mt-5 grid gap-4">
           <Field label="Allergies">
             <textarea
@@ -2686,7 +3219,12 @@ function ProfileView({
 
       <Panel className="lg:col-span-2">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <SectionTitle icon={Stethoscope} title="Vet contacts" />
+          <div>
+            <SectionTitle icon={Stethoscope} title="Vet contacts" />
+            <div className="mt-2">
+              <SectionUpdated value={data.sectionUpdatedAt.contacts} />
+            </div>
+          </div>
           {isEditing && <ActionButton icon={Plus} label="Add contact" onClick={addVet} variant="secondary" />}
         </div>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -2855,10 +3393,12 @@ function TimelineView({
 
 function MedicationView({
   data,
-  commit
+  commit,
+  registerUndo
 }: {
   data: PetMemoryData;
-  commit: (updater: (current: PetMemoryData) => PetMemoryData) => void;
+  commit: CommitPetMemory;
+  registerUndo: RegisterUndo;
 }) {
   const [draft, setDraft] = useState<Medication>(emptyMedication);
   const [isMedicationListEditing, setIsMedicationListEditing] = useState(false);
@@ -2893,27 +3433,49 @@ function MedicationView({
 
   const submit = () => {
     if (!draft.name.trim() || !draft.dosage.trim()) return;
-    commit((current) => ({
-      ...current,
-      medications: [{ ...draft, id: newId("med") }, ...current.medications]
-    }));
+    commit(
+      (current) => ({
+        ...current,
+        medications: [{ ...draft, id: newId("med") }, ...current.medications]
+      }),
+      "medications"
+    );
     resetMedicationForm();
     setShowAddMedicationForm(false);
   };
 
   const updateMedication = <K extends keyof Medication>(id: string, field: K, value: Medication[K]) => {
-    commit((current) => ({
-      ...current,
-      medications: current.medications.map((medication) => (medication.id === id ? { ...medication, [field]: value } : medication))
-    }));
+    commit(
+      (current) => ({
+        ...current,
+        medications: current.medications.map((medication) => (medication.id === id ? { ...medication, [field]: value } : medication))
+      }),
+      "medications"
+    );
   };
 
   const deleteMedication = (medication: Medication) => {
     if (!window.confirm(`Are you sure you want to delete ${medication.name}? This removes it from this pet's medication tracker.`)) return;
-    commit((current) => ({
-      ...current,
-      medications: current.medications.filter((item) => item.id !== medication.id)
-    }));
+    const removedIndex = data.medications.findIndex((item) => item.id === medication.id);
+    commit(
+      (current) => ({
+        ...current,
+        medications: current.medications.filter((item) => item.id !== medication.id)
+      }),
+      "medications"
+    );
+    registerUndo(`${medication.name} was removed.`, () => {
+      commit(
+        (current) => {
+          if (current.medications.some((item) => item.id === medication.id)) return current;
+          const medications = [...current.medications];
+          medications.splice(Math.max(0, Math.min(removedIndex, medications.length)), 0, medication);
+          return { ...current, medications };
+        },
+        "medications",
+        data.id
+      );
+    });
     if (selectedMedicationId === medication.id) {
       setSelectedMedicationId(null);
     }
@@ -2932,6 +3494,9 @@ function MedicationView({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <SectionTitle icon={ClipboardList} title="Medication tracker" />
+            <div className="mt-2">
+              <SectionUpdated value={data.sectionUpdatedAt.medications} />
+            </div>
             {isMedicationListEditing && (
               <p className="mt-3 text-sm leading-6 text-muted">
                 Choose a medication to edit. Changes save automatically. Use X only for mistakes.
@@ -4081,7 +4646,7 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
         <dl className="grid gap-2 text-sm sm:min-w-72">
           <Definition label="Microchip" value={data.profile.microchip} />
           <Definition label="Insurance" value={data.profile.insurance} />
-          <Definition label="Updated" value={formatDate(data.updatedAt, true)} />
+          <Definition label="Summary current through" value={formatDate(data.updatedAt, true)} />
         </dl>
       </div>
 

@@ -187,6 +187,18 @@ export type PetLongevityData = {
   qualityOfLifeNotes: QualityOfLifeNote[];
 };
 
+export type PetOnboardingState = {
+  medicationsReviewed: boolean;
+  remindersReviewed: boolean;
+  emergencySummaryReviewed: boolean;
+};
+
+export type PetSectionTimestamps = {
+  profile: string;
+  contacts: string;
+  medications: string;
+};
+
 export type PetMemoryData = {
   id: string;
   profile: PetProfile;
@@ -198,6 +210,8 @@ export type PetMemoryData = {
   reminders: Reminder[];
   documents: VetDocument[];
   longevity: PetLongevityData;
+  onboarding: PetOnboardingState;
+  sectionUpdatedAt: PetSectionTimestamps;
   updatedAt: string;
 };
 
