@@ -142,6 +142,33 @@ const viewMeta: Record<ViewId, ViewMeta> = {
 };
 
 const VIEW_HISTORY_KEY = "petHealthView";
+const sessionDisclosureState = new Map<string, boolean>();
+const sessionChoiceState = new Map<string, string>();
+
+function useSessionDisclosure(key: string, defaultOpen = false) {
+  const [isOpen, setIsOpenState] = useState(() => sessionDisclosureState.get(key) ?? defaultOpen);
+
+  const setIsOpen = useCallback((next: React.SetStateAction<boolean>) => {
+    setIsOpenState((current) => {
+      const value = typeof next === "function" ? next(current) : next;
+      sessionDisclosureState.set(key, value);
+      return value;
+    });
+  }, [key]);
+
+  return [isOpen, setIsOpen] as const;
+}
+
+function useSessionChoice<T extends string>(key: string, defaultValue: T) {
+  const [value, setValueState] = useState<T>(() => (sessionChoiceState.get(key) as T | undefined) ?? defaultValue);
+
+  const setValue = useCallback((next: T) => {
+    sessionChoiceState.set(key, next);
+    setValueState(next);
+  }, [key]);
+
+  return [value, setValue] as const;
+}
 
 function historyView(state: unknown): ViewId | null {
   if (!state || typeof state !== "object") return null;
@@ -1725,7 +1752,7 @@ export function PetHealthDashboard() {
           )}
 
           {currentView === "overview" && (
-            <OverviewView data={data} metrics={metrics} commit={commit} setActiveView={requestView} />
+            <OverviewView key={`overview-${data.id}`} data={data} metrics={metrics} commit={commit} setActiveView={requestView} />
           )}
           {currentView === "care" && <CarePlanView data={data} metrics={metrics} commit={commit} setActiveView={requestView} />}
           {currentView === "more" && <MoreView data={data} metrics={metrics} setActiveView={requestView} />}
@@ -1748,7 +1775,7 @@ export function PetHealthDashboard() {
           )}
           {currentView === "expenses" && <ExpenseView data={data} commit={commit} />}
           {currentView === "trends" && <TrendsView data={data} metrics={metrics} commit={commit} />}
-          {currentView === "longevity" && <LongevityView data={data} metrics={metrics} commit={commit} />}
+          {currentView === "longevity" && <LongevityView key={`longevity-${data.id}`} data={data} metrics={metrics} commit={commit} />}
           {currentView === "recent" && <RecentView data={data} />}
           {currentView === "visit" && <VetVisitView data={data} setActiveView={requestView} />}
           {currentView === "documents" && (
@@ -1760,7 +1787,7 @@ export function PetHealthDashboard() {
               showNotice={showNotice}
             />
           )}
-          {currentView === "emergency" && <EmergencyView data={data} />}
+          {currentView === "emergency" && <EmergencyView key={`emergency-${data.id}`} data={data} />}
         </main>
       </div>
       {undoAction && <UndoBanner message={undoAction.message} onUndo={undoLastAction} onDismiss={dismissUndo} />}
@@ -2991,62 +3018,76 @@ function OverviewView({
         </Panel>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <Panel className="bg-white/95">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <SectionTitle icon={NotebookTabs} title="Recent health memory" />
-            <ActionButton icon={Plus} label="Add event" onClick={() => setActiveView("timeline")} variant="secondary" />
-          </div>
-          <div className="mt-4 space-y-3">
-            {latestEvents.map((event) => (
-              <TimelineItem key={event.id} event={event} />
-            ))}
-            {latestEvents.length === 0 && (
-              <GuidedEmptyState
-                icon={NotebookTabs}
-                title="No health memories yet"
-                description="Add a vet visit, behavior change, test result, or care note. Short notes are enough to begin."
-                actionLabel="Add first event"
-                onAction={() => setActiveView("timeline")}
-              />
-            )}
-          </div>
-        </Panel>
+      <DisclosurePanel
+        stateKey={`today:${data.id}:memory`}
+        icon={NotebookTabs}
+        title="Recent health memory"
+        description={`${latestEvents.length} recent ${latestEvents.length === 1 ? "entry" : "entries"}. Open when you need the detail.`}
+        className="bg-white/95"
+      >
+        <div className="flex justify-end">
+          <ActionButton icon={Plus} label="Add event" onClick={() => setActiveView("timeline")} variant="secondary" />
+        </div>
+        <div className="mt-4 space-y-3">
+          {latestEvents.map((event) => (
+            <TimelineItem key={event.id} event={event} />
+          ))}
+          {latestEvents.length === 0 && (
+            <GuidedEmptyState
+              icon={NotebookTabs}
+              title="No health memories yet"
+              description="Add a vet visit, behavior change, test result, or care note. Short notes are enough to begin."
+              actionLabel="Add first event"
+              onAction={() => setActiveView("timeline")}
+            />
+          )}
+        </div>
+      </DisclosurePanel>
 
-        <aside className="space-y-5">
-          <Panel className="border-pine/10 bg-mist/70">
-            <SectionTitle icon={Plus} title="Quick log" />
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+      <DisclosurePanel
+        stateKey={`today:${data.id}:shortcuts`}
+        icon={Plus}
+        title="Quick log and vet essentials"
+        description={`${emergencyReadyCount}/4 emergency essentials ready, with shortcuts for common care updates.`}
+        className="border-pine/10 bg-mist/55"
+      >
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Quick log</h3>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <ActionButton icon={HeartPulse} label="Log symptom" onClick={() => setActiveView("symptoms")} variant="secondary" />
               <ActionButton icon={Stethoscope} label="Vet visit" onClick={() => setActiveView("timeline")} variant="secondary" />
               <ActionButton icon={Pill} label="Medication" onClick={() => setActiveView("meds")} variant="secondary" />
               <ActionButton icon={BadgeDollarSign} label="Cost" onClick={() => setActiveView("expenses")} variant="secondary" />
             </div>
-          </Panel>
-
-          <Panel className="border-coral/15 bg-coral/5">
+          </div>
+          <div className="rounded-lg border border-coral/15 bg-coral/5 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <SectionTitle icon={AlertTriangle} title="Vet essentials" />
-              <ActionButton icon={Printer} label="Print" onClick={() => setActiveView("emergency")} variant="secondary" />
+              <h3 className="text-sm font-semibold text-ink">Vet essentials</h3>
+              <ActionButton icon={Printer} label="Vet packet" onClick={() => setActiveView("emergency")} variant="secondary" />
             </div>
-            <dl className="mt-5 space-y-3 text-sm">
+            <dl className="mt-4 space-y-3 text-sm">
               <Definition label="Primary vet" value={`${data.profile.vets[0]?.clinic ?? "Not set"} · ${data.profile.vets[0]?.phone ?? ""}`} />
               <Definition label="After-hours" value={data.profile.vets[0]?.afterHours ?? "Not set"} />
               <Definition label="Microchip" value={data.profile.microchip || "Not set"} />
-              <Definition label="Ready summary" value={`${emergencyReadyCount}/4 essentials complete`} />
             </dl>
-          </Panel>
-        </aside>
-      </div>
+          </div>
+        </div>
+      </DisclosurePanel>
 
-      <Panel className="bg-ivory/70">
-        <SectionTitle icon={Stethoscope} title="Care context" />
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <DisclosurePanel
+        stateKey={`today:${data.id}:context`}
+        icon={Stethoscope}
+        title="Care context"
+        description={`${data.profile.conditions.length} conditions, ${data.profile.allergies.length} allergies, and ${data.profile.careInstructions.length} care instructions recorded.`}
+        className="bg-ivory/70"
+      >
+        <div className="grid gap-4 lg:grid-cols-3">
           <InfoBlock title="Conditions" items={data.profile.conditions} />
           <InfoBlock title="Allergies" items={data.profile.allergies} danger />
           <InfoBlock title="Care instructions" items={data.profile.careInstructions} />
         </div>
-      </Panel>
+      </DisclosurePanel>
     </div>
   );
 }
@@ -4913,6 +4954,65 @@ function TrendsView({
   );
 }
 
+function PreventionItemEditor({
+  item,
+  today,
+  onUpdate,
+}: {
+  item: PreventionItem;
+  today: string;
+  onUpdate: (id: string, patch: Partial<PreventionItem>) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-ink/10 bg-white/75 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-semibold text-ink">{item.title}</h3>
+            <span className="rounded-lg bg-oat px-2 py-1 text-xs font-semibold text-muted">{item.category}</span>
+          </div>
+          {item.lastDoneDate && <p className="mt-1 text-xs font-medium text-muted">Last done {formatDate(item.lastDoneDate)}</p>}
+        </div>
+        <select
+          value={item.status}
+          onChange={(event) =>
+            onUpdate(item.id, {
+              status: event.target.value as PreventionStatus,
+              lastDoneDate: event.target.value === "Done" ? today : item.lastDoneDate,
+            })
+          }
+          className={`input md:w-44 ${preventionStatusTone(item.status)}`}
+        >
+          {preventionStatuses.map((status) => <option key={status}>{status}</option>)}
+        </select>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-[0.65fr_1.35fr]">
+        <Field label="Next due">
+          <input
+            type="date"
+            value={item.nextDueDate ?? ""}
+            onChange={(event) => onUpdate(item.id, { nextDueDate: event.target.value })}
+            className="input"
+          />
+        </Field>
+        <Field label="Notes">
+          <input value={item.notes} onChange={(event) => onUpdate(item.id, { notes: event.target.value })} className="input" />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
+type LongevitySectionId = "prevention" | "routines" | "watchlist" | "prep" | "trends";
+
+const longevitySections: Array<{ id: LongevitySectionId; label: string; icon: LucideIcon }> = [
+  { id: "prevention", label: "Prevention", icon: ListChecks },
+  { id: "routines", label: "Routines", icon: Activity },
+  { id: "watchlist", label: "Watchlist", icon: Target },
+  { id: "prep", label: "Vet prep", icon: MessageSquareText },
+  { id: "trends", label: "Trends", icon: LineChart },
+];
+
 function LongevityView({
   data,
   metrics,
@@ -4924,8 +5024,11 @@ function LongevityView({
 }) {
   const [preventionDraft, setPreventionDraft] = useState<PreventionItem>(emptyPrevention);
   const [routineDraft, setRoutineDraft] = useState<HabitRoutine>(emptyRoutine);
+  const [activeSection, setActiveSection] = useSessionChoice<LongevitySectionId>(`longevity:${data.id}:section`, "prevention");
   const vetPrepQuestions = useMemo(() => buildVetPrepQuestions(data), [data]);
   const today = todayInput();
+  const preventionAttentionItems = data.longevity.prevention.filter((item) => item.status === "Due soon" || item.status === "Overdue");
+  const preventionOtherItems = data.longevity.prevention.filter((item) => item.status !== "Due soon" && item.status !== "Overdue");
 
   const updatePrevention = (id: string, patch: Partial<PreventionItem>) => {
     commit((current) => ({
@@ -5006,118 +5109,120 @@ function LongevityView({
         </div>
       </Panel>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+      <nav
+        className="local-section-nav sticky z-20 -mx-1 overflow-x-auto border-y border-ink/10 bg-ivory/95 px-1 py-2 shadow-sm backdrop-blur"
+        aria-label="Longevity sections"
+      >
+        <div className="mx-auto flex w-max min-w-full gap-2 sm:grid sm:w-full sm:grid-cols-5">
+          {longevitySections.map((section) => {
+            const Icon = section.icon;
+            const selected = section.id === activeSection;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => setActiveSection(section.id)}
+                aria-current={selected ? "page" : undefined}
+                className={`flex shrink-0 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                  selected
+                    ? "border-pine bg-pine text-white shadow-sm"
+                    : "border-ink/10 bg-white text-muted hover:border-pine/30 hover:text-ink"
+                }`}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                {section.label}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {activeSection === "prevention" && (
         <Panel>
           <SectionTitle icon={ListChecks} title="Prevention checklist" />
           <p className="mt-3 text-sm leading-6 text-muted">
             Keep the boring-but-important care items visible: vaccines, dental, parasites, labs, weight, mobility, nutrition, and admin.
           </p>
           <div className="mt-5 space-y-3">
-            {data.longevity.prevention.length ? (
-              data.longevity.prevention.map((item) => (
-                <div key={item.id} className="rounded-lg border border-ink/10 bg-white/75 p-4">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-ink">{item.title}</h3>
-                        <span className="rounded-lg bg-oat px-2 py-1 text-xs font-semibold text-muted">{item.category}</span>
-                      </div>
-                      {item.lastDoneDate && <p className="mt-1 text-xs font-medium text-muted">Last done {formatDate(item.lastDoneDate)}</p>}
-                    </div>
-                    <select
-                      value={item.status}
-                      onChange={(event) =>
-                        updatePrevention(item.id, {
-                          status: event.target.value as PreventionStatus,
-                          lastDoneDate: event.target.value === "Done" ? today : item.lastDoneDate
-                        })
-                      }
-                      className={`input md:w-44 ${preventionStatusTone(item.status)}`}
-                    >
-                      {preventionStatuses.map((status) => (
-                        <option key={status}>{status}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-[0.65fr_1.35fr]">
-                    <Field label="Next due">
-                      <input
-                        type="date"
-                        value={item.nextDueDate ?? ""}
-                        onChange={(event) => updatePrevention(item.id, { nextDueDate: event.target.value })}
-                        className="input"
-                      />
-                    </Field>
-                    <Field label="Notes">
-                      <input
-                        value={item.notes}
-                        onChange={(event) => updatePrevention(item.id, { notes: event.target.value })}
-                        className="input"
-                      />
-                    </Field>
-                  </div>
-                </div>
+            {preventionAttentionItems.length ? (
+              preventionAttentionItems.map((item) => (
+                <PreventionItemEditor key={item.id} item={item} today={today} onUpdate={updatePrevention} />
               ))
             ) : (
-              <EmptyState text="No prevention items yet. Add vaccines, dental care, parasite prevention, bloodwork, or custom items." />
+              <EmptyState text={data.longevity.prevention.length ? "No prevention items need attention right now." : "No prevention items yet."} />
             )}
-          </div>
 
-          <div className="mt-5 rounded-lg border border-dashed border-ink/20 bg-white/60 p-4">
-            <h3 className="text-sm font-semibold text-ink">Add custom checklist item</h3>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Field label="Item">
+            {preventionOtherItems.length > 0 && (
+              <DisclosureBlock
+                stateKey={`longevity:${data.id}:prevention-other`}
+                title="Up to date and not applicable"
+                description={`${preventionOtherItems.length} lower-attention ${preventionOtherItems.length === 1 ? "item" : "items"}.`}
+              >
+                <div className="space-y-3">
+                  {preventionOtherItems.map((item) => (
+                    <PreventionItemEditor key={item.id} item={item} today={today} onUpdate={updatePrevention} />
+                  ))}
+                </div>
+              </DisclosureBlock>
+            )}
+
+            <DisclosureBlock
+              stateKey={`longevity:${data.id}:prevention-add`}
+              title="Add custom checklist item"
+              description="Add a preventive or administrative item only when you need one."
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Item">
+                  <input
+                    value={preventionDraft.title}
+                    onChange={(event) => setPreventionDraft({ ...preventionDraft, title: event.target.value })}
+                    placeholder="e.g. Recheck stairs/rugs setup"
+                    className="input"
+                  />
+                </Field>
+                <Field label="Category">
+                  <select
+                    value={preventionDraft.category}
+                    onChange={(event) => setPreventionDraft({ ...preventionDraft, category: event.target.value as PreventionCategory })}
+                    className="input"
+                  >
+                    {preventionCategories.map((category) => <option key={category}>{category}</option>)}
+                  </select>
+                </Field>
+                <Field label="Status">
+                  <select
+                    value={preventionDraft.status}
+                    onChange={(event) => setPreventionDraft({ ...preventionDraft, status: event.target.value as PreventionStatus })}
+                    className="input"
+                  >
+                    {preventionStatuses.map((status) => <option key={status}>{status}</option>)}
+                  </select>
+                </Field>
+                <Field label="Next due">
+                  <input
+                    type="date"
+                    value={preventionDraft.nextDueDate ?? ""}
+                    onChange={(event) => setPreventionDraft({ ...preventionDraft, nextDueDate: event.target.value })}
+                    className="input"
+                  />
+                </Field>
+              </div>
+              <Field label="Notes">
                 <input
-                  value={preventionDraft.title}
-                  onChange={(event) => setPreventionDraft({ ...preventionDraft, title: event.target.value })}
-                  placeholder="e.g. Recheck stairs/rugs setup"
-                  className="input"
+                  value={preventionDraft.notes}
+                  onChange={(event) => setPreventionDraft({ ...preventionDraft, notes: event.target.value })}
+                  className="input mt-1"
                 />
               </Field>
-              <Field label="Category">
-                <select
-                  value={preventionDraft.category}
-                  onChange={(event) => setPreventionDraft({ ...preventionDraft, category: event.target.value as PreventionCategory })}
-                  className="input"
-                >
-                  {preventionCategories.map((category) => (
-                    <option key={category}>{category}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Status">
-                <select
-                  value={preventionDraft.status}
-                  onChange={(event) => setPreventionDraft({ ...preventionDraft, status: event.target.value as PreventionStatus })}
-                  className="input"
-                >
-                  {preventionStatuses.map((status) => (
-                    <option key={status}>{status}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Next due">
-                <input
-                  type="date"
-                  value={preventionDraft.nextDueDate ?? ""}
-                  onChange={(event) => setPreventionDraft({ ...preventionDraft, nextDueDate: event.target.value })}
-                  className="input"
-                />
-              </Field>
-            </div>
-            <Field label="Notes">
-              <input
-                value={preventionDraft.notes}
-                onChange={(event) => setPreventionDraft({ ...preventionDraft, notes: event.target.value })}
-                className="input mt-1"
-              />
-            </Field>
-            <div className="mt-3">
-              <ActionButton icon={Plus} label="Add checklist item" onClick={submitPrevention} variant="secondary" />
-            </div>
+              <div className="mt-3">
+                <ActionButton icon={Plus} label="Add checklist item" onClick={submitPrevention} variant="secondary" />
+              </div>
+            </DisclosureBlock>
           </div>
         </Panel>
+      )}
 
+      {activeSection === "routines" && (
         <Panel>
           <SectionTitle icon={Activity} title="Daily and weekly habits" />
           <p className="mt-3 text-sm leading-6 text-muted">
@@ -5165,9 +5270,13 @@ function LongevityView({
             )}
           </div>
 
-          <div className="mt-5 rounded-lg border border-dashed border-ink/20 bg-white/60 p-4">
-            <h3 className="text-sm font-semibold text-ink">Add custom routine</h3>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="mt-5">
+            <DisclosureBlock
+              stateKey={`longevity:${data.id}:routine-add`}
+              title="Add custom routine"
+              description="Create another recurring care habit when it belongs in the weekly plan."
+            >
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Routine">
                 <input
                   value={routineDraft.title}
@@ -5218,11 +5327,12 @@ function LongevityView({
             <div className="mt-3">
               <ActionButton icon={Plus} label="Add routine" onClick={submitRoutine} variant="secondary" />
             </div>
+            </DisclosureBlock>
           </div>
         </Panel>
-      </div>
+      )}
 
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+      {activeSection === "watchlist" && (
         <Panel>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <SectionTitle icon={Target} title="Risk watchlist" />
@@ -5278,7 +5388,9 @@ function LongevityView({
             )}
           </div>
         </Panel>
+      )}
 
+      {activeSection === "prep" && (
         <Panel>
           <SectionTitle icon={MessageSquareText} title="Vet conversation prep" />
           <p className="mt-3 text-sm leading-6 text-muted">
@@ -5328,23 +5440,25 @@ function LongevityView({
             </div>
           </div>
         </Panel>
-      </div>
+      )}
 
-      <Panel>
-        <SectionTitle icon={LineChart} title="Longevity trends" />
-        <div className="mt-5 grid gap-5 xl:grid-cols-2">
-          <div>
-            <h3 className="text-sm font-semibold text-ink">Weight trend</h3>
-            <WeightChart points={data.weights} />
+      {activeSection === "trends" && (
+        <Panel>
+          <SectionTitle icon={LineChart} title="Longevity trends" />
+          <div className="mt-5 grid gap-5 xl:grid-cols-2">
+            <div>
+              <h3 className="text-sm font-semibold text-ink">Weight trend</h3>
+              <WeightChart points={data.weights} />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-ink">Symptom frequency</h3>
+              <BarChart items={metrics.symptomFrequency} />
+              <h3 className="mt-6 text-sm font-semibold text-ink">Monthly care cost</h3>
+              <BarChart items={metrics.monthlyCosts} currencyValues />
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-ink">Symptom frequency</h3>
-            <BarChart items={metrics.symptomFrequency} />
-            <h3 className="mt-6 text-sm font-semibold text-ink">Monthly care cost</h3>
-            <BarChart items={metrics.monthlyCosts} currencyValues />
-          </div>
-        </div>
-      </Panel>
+        </Panel>
+      )}
     </div>
   );
 }
@@ -5687,6 +5801,8 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
   const activeMeds = data.medications.filter((med) => med.status === "Active");
   const recent30 = getRecentChanges(data, 30);
   const questions = buildVetPrepQuestions(data).slice(0, 5);
+  const primaryVet = data.profile.vets[0];
+  const openRecentSymptoms = recentSymptoms.some((symptom) => symptom.severity >= 4);
 
   return (
     <div className="emergency-sheet rounded-lg border border-ink/20 bg-white p-5 shadow-sm sm:p-8">
@@ -5732,30 +5848,6 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
 
       <section className="avoid-break mt-6 grid gap-5 border-y border-ink/10 py-5 lg:grid-cols-2">
         <div>
-          <h3 className="text-base font-semibold text-ink">Recent symptoms</h3>
-          {recentSymptoms.length > 0 ? (
-            <div className="mt-3 divide-y divide-ink/10">
-              {recentSymptoms.map((symptom) => (
-                <div key={symptom.id} className="py-3 first:pt-0">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-ink">{symptom.name}</span>
-                    <span className="text-xs font-semibold text-coral">Severity {symptom.severity}/5</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted">{formatDate(symptom.dateTime, true)} · {symptom.bodyArea || "Body area not set"}</p>
-                  <p className="mt-2 text-sm leading-6 text-ink">{symptom.notes}</p>
-                  {symptom.attachments && symptom.attachments.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {symptom.attachments.map((attachment) => <AttachmentActions key={attachment.id} attachment={attachment} compact />)}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-muted">No symptoms recorded.</p>
-          )}
-        </div>
-        <div>
           <h3 className="text-base font-semibold text-ink">Last 30 days at a glance</h3>
           <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
             <Definition label="Health events" value={String(recent30.events.length)} />
@@ -5765,11 +5857,55 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
           </dl>
           <p className="mt-4 text-xs leading-5 text-muted">These counts summarize recorded observations and care activity. They do not provide a diagnosis.</p>
         </div>
+        <div>
+          <h3 className="text-base font-semibold text-ink">Primary care contact</h3>
+          <dl className="mt-3 grid gap-3 text-sm">
+            <Definition label="Clinic" value={primaryVet?.clinic || "Not set"} />
+            <Definition label="Phone" value={primaryVet?.phone || "Not set"} />
+            <Definition label="After-hours" value={primaryVet?.afterHours || "Not set"} />
+          </dl>
+        </div>
       </section>
 
-      <section className="avoid-break mt-6">
-        <h3 className="text-base font-semibold text-ink">Vet contacts</h3>
-        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+      <DisclosurePanel
+        stateKey={`emergency:${data.id}:symptoms`}
+        icon={HeartPulse}
+        title="Recent symptoms"
+        description={`${recentSymptoms.length} recent ${recentSymptoms.length === 1 ? "symptom" : "symptoms"}${openRecentSymptoms ? ", including a higher-severity observation" : ""}.`}
+        defaultOpen={openRecentSymptoms}
+        className="avoid-break mt-5 shadow-none backdrop-blur-0"
+      >
+        {recentSymptoms.length > 0 ? (
+          <div className="divide-y divide-ink/10">
+            {recentSymptoms.map((symptom) => (
+              <div key={symptom.id} className="py-3 first:pt-0">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-ink">{symptom.name}</span>
+                  <span className="text-xs font-semibold text-coral">Severity {symptom.severity}/5</span>
+                </div>
+                <p className="mt-1 text-xs text-muted">{formatDate(symptom.dateTime, true)} · {symptom.bodyArea || "Body area not set"}</p>
+                <p className="mt-2 text-sm leading-6 text-ink">{symptom.notes}</p>
+                {symptom.attachments && symptom.attachments.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {symptom.attachments.map((attachment) => <AttachmentActions key={attachment.id} attachment={attachment} compact />)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted">No symptoms recorded.</p>
+        )}
+      </DisclosurePanel>
+
+      <DisclosurePanel
+        stateKey={`emergency:${data.id}:contacts`}
+        icon={Stethoscope}
+        title="Vet contacts"
+        description={`${data.profile.vets.length} care ${data.profile.vets.length === 1 ? "contact" : "contacts"} on file.`}
+        className="avoid-break mt-4 shadow-none backdrop-blur-0"
+      >
+        <div className="grid gap-3 lg:grid-cols-2">
           {data.profile.vets.map((vet) => (
             <div key={vet.id} className="rounded-lg border border-ink/10 p-4">
               <h4 className="font-semibold text-ink">{vet.clinic}</h4>
@@ -5782,12 +5918,18 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
               {vet.afterHours && <p className="mt-2 text-sm font-semibold text-coral">After-hours: {vet.afterHours}</p>}
             </div>
           ))}
+          {data.profile.vets.length === 0 && <p className="text-sm text-muted">No vet contacts recorded.</p>}
         </div>
-      </section>
+      </DisclosurePanel>
 
-      <section className="avoid-break mt-6">
-        <h3 className="text-base font-semibold text-ink">Recent events</h3>
-        <div className="mt-3 space-y-3">
+      <DisclosurePanel
+        stateKey={`emergency:${data.id}:events`}
+        icon={NotebookTabs}
+        title="Recent events"
+        description={`${recentEvents.length} recent health ${recentEvents.length === 1 ? "event" : "events"} ready for context.`}
+        className="avoid-break mt-4 shadow-none backdrop-blur-0"
+      >
+        <div className="space-y-3">
           {recentEvents.map((event) => (
             <div key={event.id} className="rounded-lg border border-ink/10 p-4">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
@@ -5798,12 +5940,18 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
               <p className="mt-2 text-xs font-semibold uppercase tracking-normal text-muted">{event.source}</p>
             </div>
           ))}
+          {recentEvents.length === 0 && <p className="text-sm text-muted">No recent events recorded.</p>}
         </div>
-      </section>
+      </DisclosurePanel>
 
-      <section className="avoid-break mt-6">
-        <h3 className="text-base font-semibold text-ink">Documents on file</h3>
-        <div className="mt-3 grid gap-2 text-sm">
+      <DisclosurePanel
+        stateKey={`emergency:${data.id}:documents`}
+        icon={FileText}
+        title="Documents on file"
+        description={`${data.documents.length} ${data.documents.length === 1 ? "document" : "documents"} available for this pet.`}
+        className="avoid-break mt-4 shadow-none backdrop-blur-0"
+      >
+        <div className="grid gap-2 text-sm">
           {data.documents.map((document) => (
             <div key={document.id} className="flex flex-col gap-3 rounded-lg border border-ink/10 p-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -5817,19 +5965,24 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
           ))}
           {data.documents.length === 0 && <p className="text-sm text-muted">No documents listed.</p>}
         </div>
-      </section>
+      </DisclosurePanel>
 
-      <section className="avoid-break mt-6 border-t border-ink/10 pt-5">
-        <h3 className="text-base font-semibold text-ink">Questions prepared for the visit</h3>
+      <DisclosurePanel
+        stateKey={`emergency:${data.id}:questions`}
+        icon={MessageSquareText}
+        title="Questions prepared for the visit"
+        description={`${questions.length} discussion ${questions.length === 1 ? "question" : "questions"} generated from recorded care.`}
+        className="avoid-break mt-4 border-pine/15 bg-mist/35 shadow-none backdrop-blur-0"
+      >
         {questions.length > 0 ? (
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-ink">
+          <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-ink">
             {questions.map((question) => <li key={question}>{question}</li>)}
           </ol>
         ) : (
-          <p className="mt-3 text-sm text-muted">No visit questions generated yet.</p>
+          <p className="text-sm text-muted">No visit questions generated yet.</p>
         )}
         <p className="mt-4 text-xs font-medium text-muted">Not medical advice. Review this packet with a veterinarian.</p>
-      </section>
+      </DisclosurePanel>
     </div>
   );
 }
@@ -6073,6 +6226,87 @@ function DocumentsView({
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <section className={`min-w-0 rounded-lg border border-ink/10 bg-white/85 p-5 shadow-soft backdrop-blur ${className}`}>{children}</section>;
+}
+
+function DisclosurePanel({
+  stateKey,
+  icon: Icon,
+  title,
+  description,
+  defaultOpen = false,
+  children,
+  className = "",
+}: {
+  stateKey: string;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useSessionDisclosure(stateKey, defaultOpen);
+
+  return (
+    <Panel className={className}>
+      <button
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        aria-expanded={isOpen}
+        className="flex w-full items-start gap-3 text-left"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-mist text-pine">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-lg font-semibold tracking-normal text-ink">{title}</span>
+          <span className="mt-1 block text-sm font-normal leading-6 text-muted">{description}</span>
+        </span>
+        <ChevronDown
+          className={`no-print mt-2 h-4 w-4 shrink-0 text-muted transition-transform ${isOpen ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        />
+      </button>
+      <div className={`${isOpen ? "mt-5 block" : "hidden"} print:mt-4 print:block`}>{children}</div>
+    </Panel>
+  );
+}
+
+function DisclosureBlock({
+  stateKey,
+  title,
+  description,
+  defaultOpen = false,
+  children,
+}: {
+  stateKey: string;
+  title: string;
+  description: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useSessionDisclosure(stateKey, defaultOpen);
+
+  return (
+    <div className="border-t border-ink/10 pt-4">
+      <button
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        aria-expanded={isOpen}
+        className="flex w-full items-start gap-3 text-left"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-ink">{title}</span>
+          <span className="mt-1 block text-xs font-normal leading-5 text-muted">{description}</span>
+        </span>
+        <ChevronDown
+          className={`no-print mt-1 h-4 w-4 shrink-0 text-muted transition-transform ${isOpen ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        />
+      </button>
+      <div className={`${isOpen ? "mt-4 block" : "hidden"} print:mt-3 print:block`}>{children}</div>
+    </div>
+  );
 }
 
 function SectionTitle({ icon: Icon, title }: { icon: LucideIcon; title: string }) {

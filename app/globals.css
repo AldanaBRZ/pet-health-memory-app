@@ -29,6 +29,10 @@ html {
   scroll-behavior: smooth;
 }
 
+.local-section-nav {
+  top: 0;
+}
+
 body {
   min-height: 100vh;
   margin: 0;
@@ -96,6 +100,10 @@ body {
     right: max(1rem, env(safe-area-inset-right));
     bottom: max(1rem, env(safe-area-inset-bottom));
     left: max(1rem, env(safe-area-inset-left));
+  }
+
+  .local-section-nav {
+    top: env(safe-area-inset-top);
   }
 }
 
