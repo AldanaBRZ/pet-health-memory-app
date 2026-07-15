@@ -2246,15 +2246,105 @@ function OverviewView({
 }) {
   const [reminder, setReminder] = useState<Reminder>(emptyReminder);
   const [showReminderForm, setShowReminderForm] = useState(false);
-  const nextReminders = [...data.reminders]
-    .filter((item) => !item.done)
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+  const today = todayInput();
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const tomorrowEnd = new Date(startOfToday);
+  tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+  tomorrowEnd.setHours(23, 59, 59, 999);
+  const recentStart = daysAgo(7);
+  recentStart.setHours(0, 0, 0, 0);
+
+  const todayReminders = [...data.reminders]
+    .filter((item) => {
+      const due = new Date(item.dueDate);
+      return (!item.done && due <= tomorrowEnd) || (item.done && due >= recentStart && due <= tomorrowEnd);
+    })
+    .sort(
+      (a, b) =>
+        Number(a.done) - Number(b.done) || new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+    )
     .slice(0, 4);
+  const routinePriority: Record<RoutineCategory, number> = {
+    Medication: 0,
+    Physio: 1,
+    "Appetite/hydration": 2,
+    Supplements: 3,
+    Activity: 4,
+    Rest: 5,
+    Grooming: 6,
+    Enrichment: 7,
+    Custom: 8
+  };
+  const todayRoutines = [...data.longevity.routines]
+    .filter((item) => item.cadence === "Daily")
+    .sort(
+      (a, b) =>
+        Number(a.completionDates.includes(today)) - Number(b.completionDates.includes(today)) ||
+        routinePriority[a.category] - routinePriority[b.category]
+    )
+    .slice(0, 3);
   const latestEvents = [...data.events].sort(sortByDateDesc("date")).slice(0, 3);
-  const latestEvent = latestEvents[0];
   const activeMeds = data.medications.filter((medication) => medication.status === "Active");
   const recentChanges = getRecentChanges(data, 7);
-  const nextReminder = nextReminders[0];
+  const recent30 = getRecentChanges(data, 30);
+  const weeklyItems = [
+    ...recentChanges.events
+      .filter((event) => event.type !== "symptom")
+      .map((event) => ({ id: event.id, date: event.date, label: eventLabels[event.type], title: event.title })),
+    ...recentChanges.symptoms.map((symptom) => ({
+      id: symptom.id,
+      date: symptom.dateTime,
+      label: "Symptom",
+      title: symptom.name
+    })),
+    ...recentChanges.documents.map((document) => ({
+      id: document.id,
+      date: document.date,
+      label: "Document",
+      title: document.title
+    })),
+    ...recentChanges.expenses.map((expense) => ({
+      id: expense.id,
+      date: expense.date,
+      label: "Cost",
+      title: `${expense.vendor} · ${currency(expense.amount)}`
+    }))
+  ]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 4);
+  const healthNotesThisWeek = recentChanges.events.filter((event) => event.type !== "symptom").length;
+  const scheduledCareCount = todayReminders.length + todayRoutines.length;
+  const completedCareCount =
+    todayReminders.filter((item) => item.done).length + todayRoutines.filter((item) => item.completionDates.includes(today)).length;
+  const careProgress = scheduledCareCount ? Math.round((completedCareCount / scheduledCareCount) * 100) : 100;
+  const readinessSignals = [
+    {
+      ready: data.profile.vets.length > 0,
+      next: "Add a vet contact so the right details are close at hand.",
+      view: "profile" as ViewId
+    },
+    {
+      ready: recent30.events.length > 0 || recent30.symptoms.length > 0,
+      next: "Log one recent health note or symptom.",
+      view: "timeline" as ViewId
+    },
+    {
+      ready: data.medications.length > 0 || data.onboarding.medicationsReviewed,
+      next: "Review the medication list, even if there are no current medicines.",
+      view: "meds" as ViewId
+    },
+    {
+      ready:
+        data.profile.conditions.length > 0 ||
+        data.profile.allergies.length > 0 ||
+        data.profile.careInstructions.length > 0,
+      next: "Add an allergy, condition, or care instruction for context.",
+      view: "profile" as ViewId
+    }
+  ];
+  const missingReadiness = readinessSignals.find((signal) => !signal.ready);
+  const readyForConversation = !missingReadiness;
   const emergencyReadyCount = [
     data.profile.allergies.length > 0,
     activeMeds.length > 0,
@@ -2272,128 +2362,231 @@ function OverviewView({
     setShowReminderForm(false);
   };
 
+  const toggleReminder = (item: Reminder) => {
+    commit((current) => ({
+      ...current,
+      reminders: current.reminders.map((candidate) =>
+        candidate.id === item.id ? { ...candidate, done: !candidate.done } : candidate
+      )
+    }));
+  };
+
+  const toggleRoutineToday = (routine: HabitRoutine) => {
+    const hasToday = routine.completionDates.includes(today);
+    const completionDates = hasToday
+      ? routine.completionDates.filter((date) => date !== today)
+      : [...routine.completionDates, today].sort();
+    commit((current) => ({
+      ...current,
+      longevity: {
+        ...current.longevity,
+        routines: current.longevity.routines.map((item) =>
+          item.id === routine.id ? { ...item, completionDates } : item
+        )
+      }
+    }));
+  };
+
   return (
     <div className="space-y-6">
       <OnboardingChecklist data={data} commit={commit} setActiveView={setActiveView} />
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_380px]">
-        <section className="rounded-xl border border-pine bg-pine p-5 text-white shadow-soft sm:p-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="flex items-center gap-2">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white">
-                  <Home className="h-4 w-4" aria-hidden="true" />
-                </span>
-                <p className="text-sm font-semibold uppercase tracking-normal text-white/75">Today focus</p>
-              </div>
-              <h2 className="mt-4 text-2xl font-semibold leading-tight tracking-normal text-white sm:text-3xl">
-                {nextReminder ? nextReminder.title : latestEvent ? latestEvent.title : "Start with one useful health memory"}
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/80">
-                {nextReminder
-                  ? `${nextReminder.type} due ${formatDate(nextReminder.dueDate, true)}.`
-                  : latestEvent
-                    ? `${eventLabels[latestEvent.type]} recorded ${formatDate(latestEvent.date, true)}.`
-                    : "Add a symptom, vet visit, medication, or reminder to build a clear care history."}
+
+      <Panel className="overflow-hidden border-pine/15 bg-white/95 p-0">
+        <div className="border-b border-ink/10 bg-mist/70 px-5 py-5 sm:px-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <SectionTitle icon={ListChecks} title="Today care" />
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
+                Here is what needs attention today. Everything else can wait.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 lg:justify-end">
-              <HeroAction icon={HeartPulse} label="Log symptom" onClick={() => setActiveView("symptoms")} />
-              <HeroAction icon={Sparkles} label="Recent changes" onClick={() => setActiveView("recent")} />
-              <HeroAction icon={AlertTriangle} label="Vet summary" onClick={() => setActiveView("emergency")} strong />
+            <div className="flex flex-wrap gap-2">
+              <ActionButton
+                icon={Plus}
+                label={showReminderForm ? "Close form" : "Add reminder"}
+                onClick={() => setShowReminderForm((current) => !current)}
+                variant="secondary"
+              />
+              <ActionButton icon={ArrowRight} label="Care plan" onClick={() => setActiveView("care")} variant="secondary" />
             </div>
           </div>
+          {scheduledCareCount > 0 && (
+            <div className="mt-5 max-w-2xl">
+              <div className="flex items-center justify-between gap-3 text-xs font-semibold text-muted">
+                <span>{completedCareCount} of {scheduledCareCount} complete</span>
+                <span>{careProgress}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-pine/10">
+                <div className="h-full rounded-full bg-pine transition-all" style={{ width: `${careProgress}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
 
-          <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <CareSignal
-              label="Active meds"
-              value={metrics.activeMedicationCount}
-              detail="Current schedule"
-              icon={Pill}
-              tone="text-lilac"
-              accent="bg-lilac"
-              elevated
-              actionLabel="Open meds"
-              onClick={() => setActiveView("meds")}
-            />
-            <CareSignal
-              label="Open reminders"
-              value={metrics.openReminderCount}
-              detail="Follow-ups and care"
-              icon={Bell}
-              tone="text-amber"
-              accent="bg-amber"
-              elevated
-              actionLabel="Open care plan"
-              onClick={() => setActiveView("care")}
-            />
-            <CareSignal
-              label="30-day cost"
-              value={currency(metrics.costLast30)}
-              detail="Care spend"
-              icon={BadgeDollarSign}
-              tone="text-pine"
-              accent="bg-sage"
-              elevated
-              actionLabel="Open costs"
-              onClick={() => setActiveView("expenses")}
-            />
-            <CareSignal
-              label="Recent symptoms"
-              value={metrics.symptomsLast30}
-              detail="Last 30 days"
-              icon={HeartPulse}
-              tone="text-coral"
-              accent="bg-coral"
-              elevated
-              actionLabel="Open symptoms"
-              onClick={() => setActiveView("symptoms")}
-            />
-          </div>
-        </section>
+        <div className="px-5 py-2 sm:px-6">
+          {scheduledCareCount > 0 ? (
+            <div className="divide-y divide-ink/10">
+              {todayReminders.map((item) => {
+                const due = new Date(item.dueDate);
+                const overdue = !item.done && due < startOfToday;
+                const dueToday = due >= startOfToday && due < new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+                return (
+                  <TodayCareRow
+                    key={item.id}
+                    icon={Bell}
+                    title={item.title}
+                    detail={`${item.type} · ${item.done ? "Completed" : overdue ? "Overdue" : dueToday ? "Today" : "Tomorrow"} · ${formatDate(item.dueDate, true)}`}
+                    complete={item.done}
+                    urgent={overdue}
+                    onToggle={() => toggleReminder(item)}
+                  />
+                );
+              })}
+              {todayRoutines.map((routine) => (
+                <TodayCareRow
+                  key={routine.id}
+                  icon={Activity}
+                  title={routine.title}
+                  detail={`${routine.category} · Daily routine`}
+                  complete={routine.completionDates.includes(today)}
+                  onToggle={() => toggleRoutineToday(routine)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="py-5">
+              <GuidedEmptyState
+                icon={CheckCircle2}
+                title="Nothing scheduled for today"
+                description="You are caught up. Add a reminder when there is a medicine, follow-up, or home-care task to remember."
+                actionLabel="Add reminder"
+                onAction={() => setShowReminderForm(true)}
+              />
+            </div>
+          )}
 
-        <Panel className="border-coral/15 bg-coral/5">
+          {showReminderForm && (
+            <div className="my-5 grid gap-3 rounded-lg border border-pine/15 bg-ivory p-4 sm:grid-cols-2">
+              <Field label="Task">
+                <input
+                  value={reminder.title}
+                  onChange={(event) => setReminder({ ...reminder, title: event.target.value })}
+                  placeholder="e.g. Book physio recheck"
+                  className="input"
+                />
+              </Field>
+              <Field label="Type">
+                <select
+                  value={reminder.type}
+                  onChange={(event) => setReminder({ ...reminder, type: event.target.value as Reminder["type"] })}
+                  className="input"
+                >
+                  {["Medication", "Appointment", "Follow-up", "Refill", "Home care"].map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Due">
+                <input
+                  type="datetime-local"
+                  value={reminder.dueDate}
+                  onChange={(event) => setReminder({ ...reminder, dueDate: event.target.value })}
+                  className="input"
+                />
+              </Field>
+              <div className="flex items-end">
+                <ActionButton icon={Plus} label="Save reminder" onClick={submitReminder} />
+              </div>
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <Panel className="bg-white/95">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <SectionTitle icon={AlertTriangle} title="Vet essentials" />
-            <ActionButton icon={Printer} label="Print" onClick={() => setActiveView("emergency")} variant="secondary" />
+            <div>
+              <SectionTitle icon={CalendarClock} title="This week" />
+              <p className="mt-3 text-sm leading-6 text-muted">
+                {healthNotesThisWeek} health {healthNotesThisWeek === 1 ? "note" : "notes"} · {recentChanges.symptoms.length} {recentChanges.symptoms.length === 1 ? "symptom" : "symptoms"} · {currency(recentChanges.expenseTotal)} care cost
+              </p>
+            </div>
+            <ActionButton icon={ArrowRight} label="Review changes" onClick={() => setActiveView("recent")} variant="secondary" />
           </div>
-          <dl className="mt-5 space-y-3 text-sm">
-            <Definition label="Primary vet" value={`${data.profile.vets[0]?.clinic ?? "Not set"} · ${data.profile.vets[0]?.phone ?? ""}`} />
-            <Definition label="After-hours" value={data.profile.vets[0]?.afterHours ?? "Not set"} />
-            <Definition label="Microchip" value={data.profile.microchip} />
-            <Definition label="Ready summary" value={`${emergencyReadyCount}/4 essentials complete`} />
-          </dl>
+          {weeklyItems.length > 0 ? (
+            <div className="mt-5 divide-y divide-ink/10 border-y border-ink/10">
+              {weeklyItems.map((item) => (
+                <div key={`${item.label}-${item.id}`} className="flex items-start justify-between gap-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase text-muted">{item.label}</p>
+                    <p className="mt-1 truncate text-sm font-semibold text-ink">{item.title}</p>
+                  </div>
+                  <p className="shrink-0 text-xs font-medium text-muted">{formatDate(item.date)}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-5">
+              <GuidedEmptyState
+                icon={NotebookTabs}
+                title="No changes logged this week"
+                description="Your first health note will start a clear story you can return to later."
+                actionLabel="Add health note"
+                onAction={() => setActiveView("timeline")}
+              />
+            </div>
+          )}
+        </Panel>
+
+        <Panel className={readyForConversation ? "border-pine/20 bg-mist/65" : "border-clinical/15 bg-skywash/60"}>
+          <SectionTitle icon={MessageSquareText} title="Vet conversation readiness" />
+          <p className="mt-5 text-xl font-semibold leading-7 text-ink">
+            {readyForConversation
+              ? "You are ready to explain the last 30 days."
+              : "Your last 30 days are still taking shape."}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-muted">
+            {readyForConversation
+              ? `${metrics.activeMedicationCount} active meds, ${metrics.symptomsLast30} symptoms, and ${currency(metrics.costLast30)} in care costs are organized with vet context.`
+              : missingReadiness?.next}
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <ActionButton
+              icon={readyForConversation ? ShieldCheck : ArrowRight}
+              label={readyForConversation ? "Open vet summary" : "Add missing detail"}
+              onClick={() => setActiveView(readyForConversation ? "emergency" : missingReadiness?.view ?? "profile")}
+            />
+            <span className="inline-flex items-center text-xs font-semibold text-muted">Not medical advice</span>
+          </div>
         </Panel>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="space-y-5">
-          <Panel className="bg-white/95">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <SectionTitle icon={NotebookTabs} title="Recent health memory" />
-              <ActionButton icon={Plus} label="Add event" onClick={() => setActiveView("timeline")} variant="secondary" />
-            </div>
-            <div className="mt-4 space-y-3">
-              {latestEvents.map((event) => (
-                <TimelineItem key={event.id} event={event} />
-              ))}
-              {latestEvents.length === 0 && <EmptyState text="No health events yet." />}
-            </div>
-          </Panel>
-
-          <Panel className="bg-ivory/70">
-            <SectionTitle icon={Stethoscope} title="Care context" />
-            <div className="mt-4 grid gap-4 lg:grid-cols-3">
-              <InfoBlock title="Conditions" items={data.profile.conditions} />
-              <InfoBlock title="Allergies" items={data.profile.allergies} danger />
-              <InfoBlock title="Care instructions" items={data.profile.careInstructions} />
-            </div>
-          </Panel>
-        </section>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <Panel className="bg-white/95">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <SectionTitle icon={NotebookTabs} title="Recent health memory" />
+            <ActionButton icon={Plus} label="Add event" onClick={() => setActiveView("timeline")} variant="secondary" />
+          </div>
+          <div className="mt-4 space-y-3">
+            {latestEvents.map((event) => (
+              <TimelineItem key={event.id} event={event} />
+            ))}
+            {latestEvents.length === 0 && (
+              <GuidedEmptyState
+                icon={NotebookTabs}
+                title="No health memories yet"
+                description="Add a vet visit, behavior change, test result, or care note. Short notes are enough to begin."
+                actionLabel="Add first event"
+                onAction={() => setActiveView("timeline")}
+              />
+            )}
+          </div>
+        </Panel>
 
         <aside className="space-y-5">
           <Panel className="border-pine/10 bg-mist/70">
-            <SectionTitle icon={Plus} title="Quick add" />
-            <div className="mt-4 grid gap-2">
+            <SectionTitle icon={Plus} title="Quick log" />
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
               <ActionButton icon={HeartPulse} label="Log symptom" onClick={() => setActiveView("symptoms")} variant="secondary" />
               <ActionButton icon={Stethoscope} label="Vet visit" onClick={() => setActiveView("timeline")} variant="secondary" />
               <ActionButton icon={Pill} label="Medication" onClick={() => setActiveView("meds")} variant="secondary" />
@@ -2401,163 +2594,106 @@ function OverviewView({
             </div>
           </Panel>
 
-          <Panel className="bg-white/95">
+          <Panel className="border-coral/15 bg-coral/5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <SectionTitle icon={Bell} title="Reminders" />
-              <ActionButton
-                icon={Plus}
-                label={showReminderForm ? "Close" : "Add"}
-                onClick={() => setShowReminderForm((current) => !current)}
-                variant="secondary"
-              />
+              <SectionTitle icon={AlertTriangle} title="Vet essentials" />
+              <ActionButton icon={Printer} label="Print" onClick={() => setActiveView("emergency")} variant="secondary" />
             </div>
-            <div className="mt-4 space-y-3">
-              {nextReminders.map((item) => (
-                <ReminderRow key={item.id} reminder={item} commit={commit} />
-              ))}
-              {nextReminders.length === 0 && <EmptyState text="No open reminders." />}
-            </div>
-            {showReminderForm && (
-              <div className="mt-5 grid gap-3 rounded-lg border border-ink/10 bg-ivory p-3">
-                <Field label="Task">
-                  <input
-                    value={reminder.title}
-                    onChange={(event) => setReminder({ ...reminder, title: event.target.value })}
-                    placeholder="e.g. Book physio recheck"
-                    className="input"
-                  />
-                </Field>
-                <Field label="Type">
-                  <select
-                    value={reminder.type}
-                    onChange={(event) => setReminder({ ...reminder, type: event.target.value as Reminder["type"] })}
-                    className="input"
-                  >
-                    {["Medication", "Appointment", "Follow-up", "Refill", "Home care"].map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Due">
-                <input
-                  type="datetime-local"
-                  value={reminder.dueDate}
-                  onChange={(event) => setReminder({ ...reminder, dueDate: event.target.value })}
-                  className="input"
-                />
-                </Field>
-                <ActionButton icon={Plus} label="Save reminder" onClick={submitReminder} />
-              </div>
-            )}
-          </Panel>
-
-          <Panel className="border-clinical/10 bg-skywash/70">
-            <SectionTitle icon={CalendarClock} title="Last 7 days" />
-            <div className="mt-4 grid gap-3">
-              <CareSignal
-                label="Changes"
-                value={recentChanges.events.length + recentChanges.symptoms.length}
-                detail={`${recentChanges.symptoms.length} symptoms logged`}
-                icon={Sparkles}
-                tone="text-clinical"
-              />
-              <CareSignal label="Care cost" value={currency(recentChanges.expenseTotal)} detail="Recent spend" icon={BadgeDollarSign} tone="text-amber" />
-            </div>
+            <dl className="mt-5 space-y-3 text-sm">
+              <Definition label="Primary vet" value={`${data.profile.vets[0]?.clinic ?? "Not set"} · ${data.profile.vets[0]?.phone ?? ""}`} />
+              <Definition label="After-hours" value={data.profile.vets[0]?.afterHours ?? "Not set"} />
+              <Definition label="Microchip" value={data.profile.microchip || "Not set"} />
+              <Definition label="Ready summary" value={`${emergencyReadyCount}/4 essentials complete`} />
+            </dl>
           </Panel>
         </aside>
       </div>
+
+      <Panel className="bg-ivory/70">
+        <SectionTitle icon={Stethoscope} title="Care context" />
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <InfoBlock title="Conditions" items={data.profile.conditions} />
+          <InfoBlock title="Allergies" items={data.profile.allergies} danger />
+          <InfoBlock title="Care instructions" items={data.profile.careInstructions} />
+        </div>
+      </Panel>
     </div>
   );
 }
 
-function CareSignal({
-  label,
-  value,
-  detail,
+function TodayCareRow({
   icon: Icon,
-  tone,
-  elevated = false,
-  accent,
-  actionLabel,
-  onClick
+  title,
+  detail,
+  complete,
+  urgent = false,
+  onToggle
 }: {
-  label: string;
-  value: string | number;
-  detail: string;
   icon: LucideIcon;
-  tone: string;
-  elevated?: boolean;
-  accent?: string;
-  actionLabel?: string;
-  onClick?: () => void;
+  title: string;
+  detail: string;
+  complete: boolean;
+  urgent?: boolean;
+  onToggle: () => void;
 }) {
-  const baseClass = `rounded-lg border p-3 ${
-    elevated ? "border-white/15 bg-white/95 text-ink shadow-sm" : "border-ink/10 bg-white/75"
-  }`;
-  const content = (
-    <>
-      {accent && <span className={`mb-3 block h-1.5 w-10 rounded-full ${accent}`} aria-hidden="true" />}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-muted">{label}</p>
-          <p className="mt-2 text-xl font-semibold text-ink">{value}</p>
-          <p className="mt-1 text-xs text-muted">{detail}</p>
-          {actionLabel && (
-            <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-pine">
-              {actionLabel}
-              <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" aria-hidden="true" />
-            </span>
-          )}
-        </div>
-        <Icon className={`h-4 w-4 shrink-0 ${tone}`} aria-hidden="true" />
-      </div>
-    </>
-  );
-
-  if (onClick) {
-    return (
+  return (
+    <div className="flex items-start gap-3 py-4">
       <button
         type="button"
-        onClick={onClick}
-        className={`group w-full text-left transition hover:-translate-y-0.5 hover:border-white/40 hover:bg-white focus:outline-none focus:ring-2 focus:ring-white/70 ${baseClass}`}
-        aria-label={`${label}: ${value}. ${detail}. ${actionLabel ?? "Open section"}.`}
+        onClick={onToggle}
+        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition ${
+          complete
+            ? "border-pine bg-pine text-white"
+            : urgent
+              ? "border-coral/35 bg-coral/10 text-coral hover:bg-coral/20"
+              : "border-ink/15 bg-white text-muted hover:border-pine/40 hover:bg-mist"
+        }`}
+        aria-label={complete ? `Mark ${title} incomplete` : `Mark ${title} complete`}
       >
-        {content}
+        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
       </button>
-    );
-  }
-
-  return (
-    <div className={baseClass}>
-      {content}
+      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${urgent ? "bg-coral/10 text-coral" : "bg-mist text-pine"}`}>
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm font-semibold ${complete ? "text-muted line-through" : "text-ink"}`}>{title}</p>
+        <p className={`mt-1 text-xs font-medium ${urgent ? "text-coral" : "text-muted"}`}>{detail}</p>
+      </div>
     </div>
   );
 }
 
-function HeroAction({
+function GuidedEmptyState({
   icon: Icon,
-  label,
-  onClick,
-  strong = false
+  title,
+  description,
+  actionLabel,
+  onAction
 }: {
   icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-  strong?: boolean;
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-        strong
-          ? "border-white bg-white text-pine shadow-soft hover:bg-mist"
-          : "border-white/25 bg-white/10 text-white hover:bg-white/20"
-      }`}
-    >
-      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span>{label}</span>
-    </button>
+    <div className="rounded-lg border border-dashed border-pine/20 bg-mist/35 p-5 text-center">
+      <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-white text-pine shadow-sm">
+        <Icon className="h-5 w-5" aria-hidden="true" />
+      </span>
+      <h3 className="mt-3 text-sm font-semibold text-ink">{title}</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted">{description}</p>
+      {actionLabel && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="mt-4 inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-pine/15 bg-white px-3 py-2 text-sm font-semibold text-pine transition hover:border-pine/35 hover:bg-mist"
+        >
+          {actionLabel}
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -3383,6 +3519,13 @@ function TimelineView({
             {[...data.events].sort(sortByDateDesc("date")).map((event) => (
               <TimelineItem key={event.id} event={event} />
             ))}
+            {data.events.length === 0 && (
+              <GuidedEmptyState
+                icon={NotebookTabs}
+                title="The health timeline starts here"
+                description="Add the first vet visit, symptom, behavior change, test result, or care note using the form beside this panel."
+              />
+            )}
           </div>
         </Panel>
         <DocumentsUpload data={data} commit={commit} />
@@ -3511,7 +3654,13 @@ function MedicationView({
           />
         </div>
         <div className="mt-5 space-y-6">
-          {data.medications.length === 0 && <EmptyState text="No medications yet." />}
+          {data.medications.length === 0 && (
+            <GuidedEmptyState
+              icon={Pill}
+              title="No medications recorded"
+              description="Add current medicines, supplements, or a recently ended course so dosage and vet notes stay easy to find."
+            />
+          )}
 
           {currentMedications.length > 0 && (
             <MedicationGroup
@@ -3895,6 +4044,13 @@ function SymptomView({
               )}
             </div>
           ))}
+          {data.symptoms.length === 0 && (
+            <GuidedEmptyState
+              icon={HeartPulse}
+              title="No symptoms logged"
+              description="When something changes, record what you noticed, where, how severe it seemed, and when it happened."
+            />
+          )}
         </div>
       </Panel>
     </div>
@@ -3971,10 +4127,21 @@ function ExpenseView({
       <div className="space-y-5">
         <Panel>
           <SectionTitle icon={LineChart} title="Costs by category" />
-          <BarChart items={totalByCategory} currencyValues />
+          {data.expenses.length > 0 ? (
+            <BarChart items={totalByCategory} currencyValues />
+          ) : (
+            <div className="mt-5">
+              <GuidedEmptyState
+                icon={BadgeDollarSign}
+                title="No care costs recorded"
+                description="Add the first invoice, medicine, food, insurance, physio, or emergency cost to begin seeing spending patterns."
+              />
+            </div>
+          )}
         </Panel>
         <Panel>
           <SectionTitle icon={ClipboardList} title="Expense ledger" />
+          {data.expenses.length > 0 ? (
           <div className="mt-5 overflow-hidden rounded-lg border border-ink/10">
             <table className="w-full border-collapse bg-white/80 text-sm">
               <thead className="bg-mist text-left text-xs uppercase tracking-normal text-muted">
@@ -4002,6 +4169,9 @@ function ExpenseView({
               </tbody>
             </table>
           </div>
+          ) : (
+            <p className="mt-5 text-sm leading-6 text-muted">Saved costs will appear here in date order with their category and provider.</p>
+          )}
         </Panel>
       </div>
     </div>
@@ -4760,6 +4930,13 @@ function DocumentsUpload({
             )}
           </div>
         ))}
+        {data.documents.length === 0 && (
+          <GuidedEmptyState
+            icon={FileText}
+            title="No vet documents attached"
+            description="Attach a lab result, invoice, discharge note, scan, or photo reference so it stays connected to this pet&apos;s history."
+          />
+        )}
       </div>
     </Panel>
   );
@@ -4821,11 +4998,15 @@ function InfoBlock({ title, items, danger = false }: { title: string; items: str
   return (
     <div className={`rounded-lg border p-4 ${danger ? "border-coral/15 bg-coral/5" : "border-ink/10 bg-white/60"}`}>
       <h3 className={`text-sm font-semibold ${danger ? "text-coral" : "text-ink"}`}>{title}</h3>
-      <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
+      {items.length > 0 ? (
+        <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm leading-6 text-muted">None recorded yet.</p>
+      )}
     </div>
   );
 }
@@ -5260,6 +5441,7 @@ function buildMetrics(data: PetMemoryData) {
 
 function getRecentChanges(data: PetMemoryData, days: TimeRange) {
   const cutoff = daysAgo(days);
+  cutoff.setHours(0, 0, 0, 0);
   const events = data.events.filter((item) => new Date(item.date) >= cutoff).sort(sortByDateDesc("date"));
   const symptoms = data.symptoms.filter((item) => new Date(item.dateTime) >= cutoff).sort(sortByDateDesc("dateTime"));
   const expenses = data.expenses.filter((item) => new Date(item.date) >= cutoff).sort(sortByDateDesc("date"));
