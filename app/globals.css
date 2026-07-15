@@ -79,7 +79,29 @@ textarea:focus-visible {
     padding: 0 !important;
   }
 
+  .visit-sheet {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .visit-sheet > header {
+    background: #ffffff !important;
+    border-bottom: 2px solid #172131 !important;
+    color: #172131 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .visit-sheet > header * {
+    color: #172131 !important;
+  }
+
   .avoid-break {
+    break-inside: avoid;
+  }
+
+  .emergency-sheet section,
+  .visit-sheet section {
     break-inside: avoid;
   }
 }

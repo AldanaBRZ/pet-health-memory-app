@@ -31,6 +31,7 @@ import {
   Printer,
   RefreshCcw,
   Save,
+  Search,
   ShieldCheck,
   Sparkles,
   Stethoscope,
@@ -84,6 +85,7 @@ type ViewId =
   | "trends"
   | "longevity"
   | "recent"
+  | "visit"
   | "emergency";
 
 type ViewMeta = { label: string; icon: LucideIcon };
@@ -120,6 +122,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
   trends: { label: "Trends", icon: LineChart },
   longevity: { label: "Longevity", icon: ShieldCheck },
   recent: { label: "Recent", icon: Sparkles },
+  visit: { label: "Vet Visit Mode", icon: MessageSquareText },
   emergency: { label: "Emergency", icon: AlertTriangle }
 };
 
@@ -140,6 +143,7 @@ const moreToolItems: Array<{ view: ViewId; title: string; description: string; i
   { view: "symptoms", title: "Symptom log", description: "Severity, body area, notes, and photo/file placeholders.", icon: HeartPulse },
   { view: "expenses", title: "Costs", description: "Vet, meds, physio, food, insurance, and emergency spend.", icon: BadgeDollarSign },
   { view: "longevity", title: "Longevity", description: "Prevention, habits, watchlist, quality notes, and prep questions.", icon: ShieldCheck },
+  { view: "visit", title: "Vet visit mode", description: "A focused screen for recent symptoms, medications, questions, costs, and documents.", icon: MessageSquareText },
   { view: "recent", title: "What changed", description: "7, 30, and 90 day summaries for care conversations.", icon: Sparkles }
 ];
 
@@ -1546,6 +1550,7 @@ export function PetHealthDashboard() {
           {currentView === "trends" && <TrendsView data={data} metrics={metrics} commit={commit} />}
           {currentView === "longevity" && <LongevityView data={data} metrics={metrics} commit={commit} />}
           {currentView === "recent" && <RecentView data={data} />}
+          {currentView === "visit" && <VetVisitView data={data} setActiveView={requestView} />}
           {currentView === "emergency" && <EmergencyView data={data} />}
         </main>
       </div>
@@ -2506,7 +2511,7 @@ function OverviewView({
         <Panel className="bg-white/95">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <SectionTitle icon={CalendarClock} title="This week" />
+              <SectionTitle icon={CalendarClock} title="What changed this week" />
               <p className="mt-3 text-sm leading-6 text-muted">
                 {healthNotesThisWeek} health {healthNotesThisWeek === 1 ? "note" : "notes"} · {recentChanges.symptoms.length} {recentChanges.symptoms.length === 1 ? "symptom" : "symptoms"} · {currency(recentChanges.expenseTotal)} care cost
               </p>
@@ -2552,10 +2557,13 @@ function OverviewView({
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <ActionButton
-              icon={readyForConversation ? ShieldCheck : ArrowRight}
-              label={readyForConversation ? "Open vet summary" : "Add missing detail"}
-              onClick={() => setActiveView(readyForConversation ? "emergency" : missingReadiness?.view ?? "profile")}
+              icon={readyForConversation ? MessageSquareText : ArrowRight}
+              label={readyForConversation ? "Start visit mode" : "Add missing detail"}
+              onClick={() => setActiveView(readyForConversation ? "visit" : missingReadiness?.view ?? "profile")}
             />
+            {readyForConversation && (
+              <ActionButton icon={Printer} label="Vet packet" onClick={() => setActiveView("emergency")} variant="secondary" />
+            )}
             <span className="inline-flex items-center text-xs font-semibold text-muted">Not medical advice</span>
           </div>
         </Panel>
@@ -3450,6 +3458,20 @@ function TimelineView({
   commit: (updater: (current: PetMemoryData) => PetMemoryData) => void;
 }) {
   const [draft, setDraft] = useState<HealthEvent>(emptyEvent);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | EventType>("all");
+  const filteredEvents = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    return [...data.events]
+      .filter((event) => typeFilter === "all" || event.type === typeFilter)
+      .filter((event) => {
+        if (!query) return true;
+        return [event.title, event.detail, event.source, event.bodyArea, event.related]
+          .filter(Boolean)
+          .some((value) => value?.toLowerCase().includes(query));
+      })
+      .sort(sortByDateDesc("date"));
+  }, [data.events, searchTerm, typeFilter]);
 
   const submit = () => {
     if (!draft.title.trim() || !draft.detail.trim()) return;
@@ -3514,9 +3536,44 @@ function TimelineView({
 
       <div className="space-y-5">
         <Panel>
-          <SectionTitle icon={NotebookTabs} title="Health timeline" />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <SectionTitle icon={NotebookTabs} title="Health timeline" />
+              <p className="text-xs font-semibold text-muted">
+                {filteredEvents.length} of {data.events.length} {data.events.length === 1 ? "event" : "events"}
+              </p>
+            </div>
+            {data.events.length > 0 && (
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_190px]">
+                <label className="relative block">
+                  <span className="sr-only">Search timeline</span>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="Search notes, source, body area..."
+                    className="input pl-9"
+                  />
+                </label>
+                <label>
+                  <span className="sr-only">Filter timeline by event type</span>
+                  <select
+                    value={typeFilter}
+                    onChange={(event) => setTypeFilter(event.target.value as "all" | EventType)}
+                    className="input"
+                  >
+                    <option value="all">All event types</option>
+                    {Object.entries(eventLabels).map(([key, label]) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
           <div className="mt-5 space-y-3">
-            {[...data.events].sort(sortByDateDesc("date")).map((event) => (
+            {filteredEvents.map((event) => (
               <TimelineItem key={event.id} event={event} />
             ))}
             {data.events.length === 0 && (
@@ -3524,6 +3581,18 @@ function TimelineView({
                 icon={NotebookTabs}
                 title="The health timeline starts here"
                 description="Add the first vet visit, symptom, behavior change, test result, or care note using the form beside this panel."
+              />
+            )}
+            {data.events.length > 0 && filteredEvents.length === 0 && (
+              <GuidedEmptyState
+                icon={Search}
+                title="No timeline entries match"
+                description="Try a different word or switch the event-type filter back to all events."
+                actionLabel="Clear filters"
+                onAction={() => {
+                  setSearchTerm("");
+                  setTypeFilter("all");
+                }}
               />
             )}
           </div>
@@ -4794,20 +4863,230 @@ function RecentView({ data }: { data: PetMemoryData }) {
   );
 }
 
+function VetVisitView({
+  data,
+  setActiveView
+}: {
+  data: PetMemoryData;
+  setActiveView: (view: ViewId) => void;
+}) {
+  const [range, setRange] = useState<TimeRange>(30);
+  const changes = useMemo(() => getRecentChanges(data, range), [data, range]);
+  const activeMeds = [...data.medications]
+    .filter((medication) => medication.status === "Active")
+    .sort(sortByDateDesc("startDate"));
+  const recentSymptoms = changes.symptoms.slice(0, 5);
+  const recentEvents = changes.events.filter((event) => event.type !== "symptom").slice(0, 5);
+  const recentDocuments = [...data.documents].sort(sortByDateDesc("date")).slice(0, 5);
+  const questions = buildVetPrepQuestions(data).slice(0, 6);
+  const primaryVet = data.profile.vets[0];
+
+  return (
+    <div className="visit-sheet overflow-hidden rounded-lg border border-ink/15 bg-white shadow-soft">
+      <div className="no-print flex flex-col gap-3 border-b border-ink/10 bg-ivory px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex rounded-lg border border-ink/10 bg-white p-1" aria-label="Visit history range">
+          {([7, 30, 90] as TimeRange[]).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setRange(item)}
+              className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                range === item ? "bg-pine text-white" : "text-muted hover:bg-oat"
+              }`}
+            >
+              {item} days
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ActionButton icon={Printer} label="Print visit notes" onClick={() => window.print()} variant="secondary" />
+          <ActionButton icon={FileText} label="Open Vet Packet" onClick={() => setActiveView("emergency")} />
+        </div>
+      </div>
+
+      <header className="border-b border-pine bg-pine px-5 py-6 text-white sm:px-8">
+        <p className="text-xs font-semibold uppercase text-white/70">Focused appointment view</p>
+        <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold text-white sm:text-3xl">Vet visit mode</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">
+              The details most useful for discussing {data.profile.name}&apos;s last {range} days, gathered in one calm screen.
+            </p>
+          </div>
+          <dl className="grid gap-1 text-sm sm:text-right">
+            <div>
+              <dt className="inline font-semibold text-white/65">Prepared for </dt>
+              <dd className="inline font-semibold text-white">{primaryVet?.clinic || "Next care visit"}</dd>
+            </div>
+            <div>
+              <dt className="inline font-semibold text-white/65">Current through </dt>
+              <dd className="inline font-semibold text-white">{formatDate(data.updatedAt, true)}</dd>
+            </div>
+          </dl>
+        </div>
+      </header>
+
+      <div className="grid lg:grid-cols-2">
+        <section className="border-b border-ink/10 p-5 sm:p-7 lg:border-r">
+          <div className="flex items-center gap-2">
+            <MessageSquareText className="h-5 w-5 text-pine" aria-hidden="true" />
+            <h3 className="text-lg font-semibold text-ink">Questions to discuss</h3>
+          </div>
+          {questions.length > 0 ? (
+            <ol className="mt-4 space-y-3">
+              {questions.map((question, index) => (
+                <li key={question} className="flex gap-3 text-sm leading-6 text-ink">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-mist text-xs font-semibold text-pine">
+                    {index + 1}
+                  </span>
+                  <span>{question}</span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-muted">No questions have been generated yet. Add a recent health note or watchlist item to build the first prompt.</p>
+          )}
+          <p className="mt-5 text-xs leading-5 text-muted">These are conversation prompts, not medical advice or treatment recommendations.</p>
+        </section>
+
+        <section className="border-b border-ink/10 p-5 sm:p-7">
+          <div className="flex items-center gap-2">
+            <NotebookTabs className="h-5 w-5 text-clinical" aria-hidden="true" />
+            <h3 className="text-lg font-semibold text-ink">Recent health changes</h3>
+          </div>
+          {recentEvents.length > 0 ? (
+            <div className="mt-4 divide-y divide-ink/10">
+              {recentEvents.map((event) => (
+                <div key={event.id} className="py-3 first:pt-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-semibold text-ink">{event.title}</p>
+                    <span className="shrink-0 text-xs font-medium text-muted">{formatDate(event.date)}</span>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-muted">{event.detail}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-muted">No non-symptom health events were recorded in this range.</p>
+          )}
+        </section>
+
+        <section className="border-b border-ink/10 p-5 sm:p-7 lg:border-r">
+          <div className="flex items-center gap-2">
+            <HeartPulse className="h-5 w-5 text-coral" aria-hidden="true" />
+            <h3 className="text-lg font-semibold text-ink">Symptoms</h3>
+          </div>
+          {recentSymptoms.length > 0 ? (
+            <div className="mt-4 divide-y divide-ink/10">
+              {recentSymptoms.map((symptom) => (
+                <div key={symptom.id} className="py-3 first:pt-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-ink">{symptom.name}</p>
+                    <span className="text-xs font-semibold text-coral">Severity {symptom.severity}/5</span>
+                  </div>
+                  <p className="mt-1 text-xs font-medium text-muted">{formatDate(symptom.dateTime, true)} · {symptom.bodyArea || "Body area not set"}</p>
+                  <p className="mt-2 text-sm leading-6 text-muted">{symptom.notes}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-muted">No symptoms were logged in the selected range.</p>
+          )}
+        </section>
+
+        <section className="border-b border-ink/10 p-5 sm:p-7">
+          <div className="flex items-center gap-2">
+            <Pill className="h-5 w-5 text-lilac" aria-hidden="true" />
+            <h3 className="text-lg font-semibold text-ink">Current medications</h3>
+          </div>
+          {activeMeds.length > 0 ? (
+            <div className="mt-4 divide-y divide-ink/10">
+              {activeMeds.map((medication) => (
+                <div key={medication.id} className="py-3 first:pt-0">
+                  <p className="text-sm font-semibold text-ink">{medication.name}</p>
+                  <p className="mt-1 text-sm text-muted">{medication.dosage} · {medication.frequency}</p>
+                  {(medication.vetNote || medication.refillNotes) && (
+                    <p className="mt-2 text-xs leading-5 text-muted">{medication.vetNote || medication.refillNotes}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-muted">No active medications are recorded.</p>
+          )}
+        </section>
+      </div>
+
+      <section className="grid border-b border-ink/10 lg:grid-cols-2">
+        <div className="p-5 sm:p-7 lg:border-r lg:border-ink/10">
+          <div className="flex items-center gap-2">
+            <BadgeDollarSign className="h-5 w-5 text-amber" aria-hidden="true" />
+            <h3 className="text-lg font-semibold text-ink">Care cost in this range</h3>
+          </div>
+          <p className="mt-4 text-3xl font-semibold text-ink">{currency(changes.expenseTotal)}</p>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            {changes.expenses.length} {changes.expenses.length === 1 ? "expense" : "expenses"} recorded across vet, medication, physio, food, insurance, and emergency care.
+          </p>
+        </div>
+        <div className="p-5 sm:p-7">
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-pine" aria-hidden="true" />
+            <h3 className="text-lg font-semibold text-ink">Documents to mention</h3>
+          </div>
+          {recentDocuments.length > 0 ? (
+            <ul className="mt-4 space-y-3 text-sm">
+              {recentDocuments.map((document) => (
+                <li key={document.id} className="flex items-start justify-between gap-3 border-b border-ink/10 pb-3 last:border-0 last:pb-0">
+                  <span className="font-semibold text-ink">{document.title}</span>
+                  <span className="shrink-0 text-xs font-medium text-muted">{formatDate(document.date)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-muted">No documents are attached yet.</p>
+          )}
+        </div>
+      </section>
+
+      <section className="avoid-break bg-ivory/55 p-5 sm:p-7">
+        <div className="flex items-center gap-2">
+          <Pencil className="h-5 w-5 text-pine" aria-hidden="true" />
+          <h3 className="text-lg font-semibold text-ink">Notes from this visit</h3>
+        </div>
+        <p className="no-print mt-2 text-sm text-muted">Print this page to use the lines below during the appointment.</p>
+        <div className="mt-5 space-y-7" aria-label="Blank lines for appointment notes">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-5 border-b border-ink/25" />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function EmergencyView({ data }: { data: PetMemoryData }) {
   const recentEvents = [...data.events].sort(sortByDateDesc("date")).slice(0, 6);
+  const recentSymptoms = [...data.symptoms].sort(sortByDateDesc("dateTime")).slice(0, 5);
   const activeMeds = data.medications.filter((med) => med.status === "Active");
+  const recent30 = getRecentChanges(data, 30);
+  const questions = buildVetPrepQuestions(data).slice(0, 5);
 
   return (
     <div className="emergency-sheet rounded-lg border border-ink/20 bg-white p-5 shadow-sm sm:p-8">
-      <div className="no-print mb-5 flex flex-wrap items-center justify-end gap-2">
-        <ActionButton icon={Printer} label="Print or save PDF" onClick={() => window.print()} />
-        <ActionButton icon={Download} label="Export HTML" onClick={() => downloadEmergencyHtml(data)} variant="secondary" />
+      <div className="no-print mb-5 flex flex-col gap-3 rounded-lg border border-pine/15 bg-mist/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-ink">Private Vet Packet</p>
+          <p className="mt-1 text-xs leading-5 text-muted">Print, save as PDF, or export a standalone HTML copy for a care professional.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ActionButton icon={Printer} label="Print / Save PDF" onClick={() => window.print()} />
+          <ActionButton icon={Download} label="Download HTML Packet" onClick={() => downloadVetPacketHtml(data)} variant="secondary" />
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 border-b-2 border-ink pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-coral">Emergency veterinary summary</p>
+          <p className="text-xs font-semibold uppercase tracking-normal text-coral">Vet Packet · Emergency essentials first</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-normal text-ink">{data.profile.name}</h2>
           <p className="mt-2 text-sm text-muted">
             {displaySpecies(data.profile)} · {displayBreed(data.profile)} · {getAge(data.profile.birthDate)} · {data.profile.sex || "Sex not set"} · {formatWeightKg(data.profile.weightKg)}
@@ -4816,7 +5095,7 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
         <dl className="grid gap-2 text-sm sm:min-w-72">
           <Definition label="Microchip" value={data.profile.microchip} />
           <Definition label="Insurance" value={data.profile.insurance} />
-          <Definition label="Summary current through" value={formatDate(data.updatedAt, true)} />
+          <Definition label="Packet current through" value={formatDate(data.updatedAt, true)} />
         </dl>
       </div>
 
@@ -4826,6 +5105,38 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
         <EmergencyBlock title="Current medications" items={activeMeds.map((med) => `${med.name}: ${med.dosage}, ${med.frequency}`)} />
         <EmergencyBlock title="Care instructions" items={data.profile.careInstructions} />
       </div>
+
+      <section className="avoid-break mt-6 grid gap-5 border-y border-ink/10 py-5 lg:grid-cols-2">
+        <div>
+          <h3 className="text-base font-semibold text-ink">Recent symptoms</h3>
+          {recentSymptoms.length > 0 ? (
+            <div className="mt-3 divide-y divide-ink/10">
+              {recentSymptoms.map((symptom) => (
+                <div key={symptom.id} className="py-3 first:pt-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-ink">{symptom.name}</span>
+                    <span className="text-xs font-semibold text-coral">Severity {symptom.severity}/5</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">{formatDate(symptom.dateTime, true)} · {symptom.bodyArea || "Body area not set"}</p>
+                  <p className="mt-2 text-sm leading-6 text-ink">{symptom.notes}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-muted">No symptoms recorded.</p>
+          )}
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-ink">Last 30 days at a glance</h3>
+          <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <Definition label="Health events" value={String(recent30.events.length)} />
+            <Definition label="Symptoms" value={String(recent30.symptoms.length)} />
+            <Definition label="Care costs" value={currency(recent30.expenseTotal)} />
+            <Definition label="Documents" value={String(recent30.documents.length)} />
+          </dl>
+          <p className="mt-4 text-xs leading-5 text-muted">These counts summarize recorded observations and care activity. They do not provide a diagnosis.</p>
+        </div>
+      </section>
 
       <section className="avoid-break mt-6">
         <h3 className="text-base font-semibold text-ink">Vet contacts</h3>
@@ -4872,7 +5183,20 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
               </span>
             </div>
           ))}
+          {data.documents.length === 0 && <p className="text-sm text-muted">No documents listed.</p>}
         </div>
+      </section>
+
+      <section className="avoid-break mt-6 border-t border-ink/10 pt-5">
+        <h3 className="text-base font-semibold text-ink">Questions prepared for the visit</h3>
+        {questions.length > 0 ? (
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-ink">
+            {questions.map((question) => <li key={question}>{question}</li>)}
+          </ol>
+        ) : (
+          <p className="mt-3 text-sm text-muted">No visit questions generated yet.</p>
+        )}
+        <p className="mt-4 text-xs font-medium text-muted">Not medical advice. Review this packet with a veterinarian.</p>
       </section>
     </div>
   );
@@ -5573,10 +5897,10 @@ function downloadJson(data: AppMemoryData) {
   downloadBlob(blob, "pet-health-memory-household.json");
 }
 
-function downloadEmergencyHtml(data: PetMemoryData) {
+function downloadVetPacketHtml(data: PetMemoryData) {
   if (
     !window.confirm(
-      "Export this emergency summary as an HTML file?\n\nIt may include allergies, conditions, active medications, vet contacts, and recent health events. Share it only with people who should see this pet's care details."
+      "Download this Vet Packet as an HTML file?\n\nIt includes private health details, medications, contacts, recent symptoms, expenses, documents, and visit questions. Share it only with people who should see this pet's care information."
     )
   ) {
     return;
@@ -5591,25 +5915,65 @@ function downloadEmergencyHtml(data: PetMemoryData) {
     .slice(0, 6)
     .map((event) => `<li><strong>${escapeHtml(formatDate(event.date, true))}</strong>: ${escapeHtml(event.title)}. ${escapeHtml(event.detail)}</li>`)
     .join("");
+  const symptoms = [...data.symptoms]
+    .sort(sortByDateDesc("dateTime"))
+    .slice(0, 5)
+    .map((symptom) => `<li><strong>${escapeHtml(formatDate(symptom.dateTime, true))}</strong>: ${escapeHtml(symptom.name)} (${escapeHtml(symptom.bodyArea || "body area not set")}), severity ${symptom.severity}/5. ${escapeHtml(symptom.notes)}</li>`)
+    .join("");
+  const documents = [...data.documents]
+    .sort(sortByDateDesc("date"))
+    .slice(0, 8)
+    .map((document) => `<li><strong>${escapeHtml(document.title)}</strong> · ${escapeHtml(document.type)} · ${escapeHtml(formatDate(document.date))}${document.fileName ? ` · ${escapeHtml(document.fileName)}` : ""}</li>`)
+    .join("");
+  const questions = buildVetPrepQuestions(data)
+    .slice(0, 5)
+    .map((question) => `<li>${escapeHtml(question)}</li>`)
+    .join("");
+  const recent30 = getRecentChanges(data, 30);
   const html = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(data.profile.name)} emergency summary</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(data.profile.name)} Vet Packet</title>
   <style>
-    body { font-family: Arial, sans-serif; color: #1d2433; margin: 32px; line-height: 1.5; }
-    h1, h2 { margin-bottom: 8px; }
-    section { margin-top: 22px; border-top: 1px solid #d7dce2; padding-top: 16px; }
-    .urgent { color: #b84f3d; font-weight: 700; }
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; color: #172131; margin: 0; background: #f7faf9; line-height: 1.5; }
+    main { max-width: 920px; margin: 32px auto; padding: 36px; background: #fff; border: 1px solid #d8dfdc; }
+    h1, h2 { margin: 0 0 8px; }
+    h1 { font-size: 34px; }
+    h2 { font-size: 18px; }
+    p { margin: 6px 0; }
+    ul, ol { margin: 10px 0 0; padding-left: 22px; }
+    li { margin: 6px 0; }
+    section { margin-top: 24px; border-top: 1px solid #d7dce2; padding-top: 18px; break-inside: avoid; }
+    .eyebrow { color: #b84f3d; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+    .muted { color: #596779; }
+    .identity { display: grid; gap: 20px; grid-template-columns: 1fr auto; border-bottom: 2px solid #172131; padding-bottom: 20px; }
+    .essentials { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .essential { border: 1px solid #d8dfdc; padding: 14px; }
+    .urgent { border-color: #e3a99e; background: #fff8f6; }
+    .statline { display: flex; flex-wrap: wrap; gap: 18px; color: #596779; font-size: 14px; }
+    .notice { margin-top: 24px; padding: 12px; border: 1px solid #d8dfdc; color: #596779; font-size: 12px; }
+    @media (max-width: 640px) { main { margin: 0; padding: 22px; border: 0; } .identity, .essentials { grid-template-columns: 1fr; } }
+    @media print { @page { margin: 0.55in; } body { background: #fff; } main { margin: 0; padding: 0; border: 0; max-width: none; } }
   </style>
 </head>
 <body>
-  <p class="urgent">Emergency veterinary summary</p>
-  <h1>${escapeHtml(data.profile.name)}</h1>
-  <p>${escapeHtml(`${displaySpecies(data.profile)} · ${displayBreed(data.profile)} · ${getAge(data.profile.birthDate)} · ${formatWeightKg(data.profile.weightKg)}`)}</p>
-  <section><h2>Allergies</h2><ul>${data.profile.allergies.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>
-  <section><h2>Conditions</h2><ul>${data.profile.conditions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>
-  <section><h2>Active medications</h2><ul>${activeMeds || "<li>None listed</li>"}</ul></section>
+<main>
+  <div class="identity">
+    <div><p class="eyebrow">Vet Packet · Emergency essentials first</p><h1>${escapeHtml(data.profile.name)}</h1><p class="muted">${escapeHtml(`${displaySpecies(data.profile)} · ${displayBreed(data.profile)} · ${getAge(data.profile.birthDate)} · ${data.profile.sex || "Sex not set"} · ${formatWeightKg(data.profile.weightKg)}`)}</p></div>
+    <div><p><strong>Microchip</strong><br>${escapeHtml(data.profile.microchip || "Not set")}</p><p><strong>Insurance</strong><br>${escapeHtml(data.profile.insurance || "Not set")}</p><p><strong>Current through</strong><br>${escapeHtml(formatDate(data.updatedAt, true))}</p></div>
+  </div>
+  <section class="essentials">
+    <div class="essential urgent"><h2>Allergies</h2><ul>${data.profile.allergies.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>None listed</li>"}</ul></div>
+    <div class="essential"><h2>Known conditions</h2><ul>${data.profile.conditions.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>None listed</li>"}</ul></div>
+    <div class="essential"><h2>Active medications</h2><ul>${activeMeds || "<li>None listed</li>"}</ul></div>
+    <div class="essential"><h2>Care instructions</h2><ul>${data.profile.careInstructions.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>None listed</li>"}</ul></div>
+  </section>
+  <section><h2>Last 30 days</h2><div class="statline"><span>${recent30.events.length} health events</span><span>${recent30.symptoms.length} symptoms</span><span>${escapeHtml(currency(recent30.expenseTotal))} care cost</span><span>${recent30.documents.length} documents</span></div></section>
+  <section><h2>Recent symptoms</h2><ul>${symptoms || "<li>None recorded</li>"}</ul></section>
   <section><h2>Vet contacts</h2>${data.profile.vets
     .map(
       (vet) =>
@@ -5617,11 +5981,15 @@ function downloadEmergencyHtml(data: PetMemoryData) {
           vet.afterHours ? `<br><strong>After-hours:</strong> ${escapeHtml(vet.afterHours)}` : ""
         }</p>`
     )
-    .join("")}</section>
-  <section><h2>Recent events</h2><ul>${recent}</ul></section>
+    .join("") || "<p>None listed</p>"}</section>
+  <section><h2>Recent events</h2><ul>${recent || "<li>None recorded</li>"}</ul></section>
+  <section><h2>Documents on file</h2><ul>${documents || "<li>None listed</li>"}</ul></section>
+  <section><h2>Questions prepared for the visit</h2><ol>${questions || "<li>No questions generated yet</li>"}</ol></section>
+  <p class="notice">Not medical advice. This packet summarizes owner-recorded observations and care information for discussion with a veterinarian.</p>
+</main>
 </body>
 </html>`;
-  downloadBlob(new Blob([html], { type: "text/html" }), `${safeDownloadName(data.profile.name || "pet")}-emergency-summary.html`);
+  downloadBlob(new Blob([html], { type: "text/html" }), `${safeDownloadName(data.profile.name || "pet")}-vet-packet.html`);
 }
 
 function safeDownloadName(value: string) {
