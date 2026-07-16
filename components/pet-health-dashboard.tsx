@@ -679,7 +679,7 @@ const emptyRoutine = (): HabitRoutine => ({
   notes: ""
 });
 
-function normalizePetMemoryData(value: Partial<PetMemoryData>, fallback: PetMemoryData = seedData): PetMemoryData {
+function normalizePetMemoryData(value: Partial<PetMemoryData>, fallback: PetMemoryData = createBlankPetMemory()): PetMemoryData {
   const updatedAt = value.updatedAt ?? fallback.updatedAt;
   return {
     ...fallback,
@@ -722,14 +722,14 @@ function normalizePetMemoryData(value: Partial<PetMemoryData>, fallback: PetMemo
   };
 }
 
-function normalizeAppMemoryData(value: unknown, includeDemoCompanion = true): AppMemoryData {
+function normalizeAppMemoryData(value: unknown): AppMemoryData {
   if (isRecord(value) && Array.isArray(value.pets)) {
-    const normalizedPets = value.pets.length
-      ? value.pets.map((pet, index) => normalizePetMemoryData((isRecord(pet) ? pet : {}) as Partial<PetMemoryData>, seedAppData.pets[index] ?? seedData))
-      : seedAppData.pets;
-    const pets = includeDemoCompanion ? withDemoExoticPet(normalizedPets) : normalizedPets;
+    if (value.pets.length === 0) return createEmptyAppMemory();
+    const pets = value.pets.map((pet) =>
+      normalizePetMemoryData((isRecord(pet) ? pet : {}) as Partial<PetMemoryData>, createBlankPetMemory())
+    );
     const requestedActivePetId = typeof value.activePetId === "string" ? value.activePetId : "";
-    const activePetId = pets.some((pet) => pet.id === requestedActivePetId) ? requestedActivePetId : pets[0]?.id ?? seedData.id;
+    const activePetId = pets.some((pet) => pet.id === requestedActivePetId) ? requestedActivePetId : pets[0].id;
     return {
       pets,
       activePetId,
@@ -737,28 +737,13 @@ function normalizeAppMemoryData(value: unknown, includeDemoCompanion = true): Ap
     };
   }
 
-  const pet = normalizePetMemoryData((isRecord(value) ? value : {}) as Partial<PetMemoryData>);
-  const pets = includeDemoCompanion ? withDemoExoticPet([pet]) : [pet];
+  const pet = normalizePetMemoryData((isRecord(value) ? value : {}) as Partial<PetMemoryData>, createBlankPetMemory());
+  const pets = [pet];
   return {
     pets,
     activePetId: pet.id,
     updatedAt: newestPetTimestamp(pets)
   };
-}
-
-function withDemoExoticPet(pets: PetMemoryData[]) {
-  if (pets.some((pet) => pet.id === seedExoticPetData.id)) return pets;
-  if (!pets.some(isDemoMiloPet)) return pets;
-  return [...pets, seedExoticPetData];
-}
-
-function isDemoMiloPet(pet: PetMemoryData) {
-  return (
-    pet.id === seedData.id ||
-    (pet.profile.name === seedData.profile.name &&
-      pet.profile.breed === seedData.profile.breed &&
-      pet.profile.vets.some((vet) => vet.clinic === "Riverbend Veterinary Hospital"))
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -888,7 +873,7 @@ function parseImportedMemory(value: unknown): { data?: AppMemoryData; error?: st
     petIds.add(petId);
   }
 
-  return { data: normalizeAppMemoryData(candidate, false) };
+  return { data: normalizeAppMemoryData(candidate) };
 }
 
 function newestPetTimestamp(pets: PetMemoryData[]) {
@@ -943,18 +928,45 @@ function createBlankPetMemory(): PetMemoryData {
   };
 }
 
-function saveLocalPetMemory(data: AppMemoryData) {
+function createEmptyAppMemory(): AppMemoryData {
+  const pet = createBlankPetMemory();
+  return {
+    pets: [pet],
+    activePetId: pet.id,
+    updatedAt: pet.updatedAt
+  };
+}
+
+function isLegacyDemoHousehold(data: AppMemoryData) {
+  const demoPetIds = new Set([seedData.id, seedExoticPetData.id]);
+  return data.pets.length > 0 && data.pets.length <= demoPetIds.size && data.pets.every((pet) => demoPetIds.has(pet.id));
+}
+
+function accountStorageKey(userId: string) {
+  return `${STORAGE_KEY}:account:${userId}`;
+}
+
+function readLocalPetMemory(storageKey = STORAGE_KEY) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const stored = window.localStorage.getItem(storageKey);
+    return stored ? normalizeAppMemoryData(JSON.parse(stored)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalPetMemory(data: AppMemoryData, storageKey = STORAGE_KEY) {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(data));
     return null;
   } catch {
     return "Local browser storage is full or unavailable. Export a backup before closing.";
   }
 }
 
-function clearLocalPetMemory() {
+function clearLocalPetMemory(storageKey = STORAGE_KEY) {
   try {
-    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(storageKey);
   } catch {
     return "Could not clear local browser storage in this browser.";
   }
@@ -981,7 +993,10 @@ function safeTimestamp(value?: string | null) {
 }
 
 export function PetHealthDashboard() {
-  const [appData, setAppData] = useState<AppMemoryData>(seedAppData);
+  const [appData, setAppData] = useState<AppMemoryData>(() => createEmptyAppMemory());
+  const [demoAppData, setDemoAppData] = useState<AppMemoryData>(seedAppData);
+  const [isDemoPreview, setIsDemoPreview] = useState(false);
+  const [fallbackPet] = useState<PetMemoryData>(() => createBlankPetMemory());
   const [ready, setReady] = useState(false);
   const [activeView, setActiveView] = useState<ViewId>("overview");
   const [viewTransitionId, setViewTransitionId] = useState(0);
@@ -998,7 +1013,6 @@ export function PetHealthDashboard() {
   const [moreToolsCanScrollLeft, setMoreToolsCanScrollLeft] = useState(false);
   const [moreToolsCanScrollRight, setMoreToolsCanScrollRight] = useState(false);
   const cloudReadyForUser = useRef<string | null>(null);
-  const loadedStoredLocalCopy = useRef(false);
   const skipNextCloudSave = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1008,7 +1022,8 @@ export function PetHealthDashboard() {
   const historyInitialized = useRef(false);
   const pwaRegistration = useRef<ServiceWorkerRegistration | null>(null);
   const reloadingForServiceWorker = useRef(false);
-  const data = appData.pets.find((pet) => pet.id === appData.activePetId) ?? appData.pets[0] ?? seedData;
+  const activeAppData = isDemoPreview ? demoAppData : appData;
+  const data = activeAppData.pets.find((pet) => pet.id === activeAppData.activePetId) ?? activeAppData.pets[0] ?? fallbackPet;
 
   useEffect(() => {
     const updateConnectionState = () => {
@@ -1035,17 +1050,15 @@ export function PetHealthDashboard() {
   useEffect(() => {
     let mounted = true;
 
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        loadedStoredLocalCopy.current = true;
-        setAppData(normalizeAppMemoryData(JSON.parse(stored)));
+    if (!supabase) {
+      const stored = readLocalPetMemory();
+      if (stored && !isLegacyDemoHousehold(stored)) {
+        setAppData(stored);
+      } else if (stored) {
+        clearLocalPetMemory();
       }
-    } catch {
-      setAppData(seedAppData);
-    } finally {
-      setReady(true);
     }
+    setReady(true);
 
     if (!supabase) {
       setSyncStatus("local");
@@ -1094,6 +1107,7 @@ export function PetHealthDashboard() {
 
     const loadCloudMemory = async () => {
       setSyncStatus("loading-cloud");
+      const localAccountData = readLocalPetMemory(accountStorageKey(user.id));
       const { data: row, error } = await client
         .from("pet_memories")
         .select("data, updated_at")
@@ -1111,11 +1125,10 @@ export function PetHealthDashboard() {
       if (row?.data) {
         const remoteData = normalizeAppMemoryData(row.data);
         const remoteUpdatedAt = Math.max(safeTimestamp(remoteData.updatedAt), safeTimestamp(row.updated_at));
-        const localUpdatedAt = safeTimestamp(appData.updatedAt);
+        const localUpdatedAt = safeTimestamp(localAccountData?.updatedAt);
 
-        cloudReadyForUser.current = user.id;
-
-        if (loadedStoredLocalCopy.current && localUpdatedAt > remoteUpdatedAt + 1000) {
+        if (localAccountData && localUpdatedAt > remoteUpdatedAt + 1000) {
+          setAppData(localAccountData);
           setSyncStatus("conflict");
           setAuthMessage(
             "This browser has newer local changes than the cloud copy. Use Sync now to upload this browser copy, or export JSON before continuing."
@@ -1123,17 +1136,32 @@ export function PetHealthDashboard() {
           return;
         }
 
+        cloudReadyForUser.current = user.id;
         skipNextCloudSave.current = true;
         setAppData(remoteData);
         setAuthMessage(`Loaded synced data${row.updated_at ? ` from ${formatDate(row.updated_at, true)}` : ""}.`);
       } else {
-        const saveError = await savePetMemoryToCloud(user.id, appData);
+        const firstHousehold = localAccountData ?? createEmptyAppMemory();
+        const saveError = await savePetMemoryToCloud(user.id, firstHousehold);
         if (saveError) {
           setSyncStatus("error");
           setAuthMessage(saveError);
           return;
         }
-        setAuthMessage("Migrated this browser household copy to your new synced account.");
+        cloudReadyForUser.current = user.id;
+        skipNextCloudSave.current = true;
+        setAppData(firstHousehold);
+        const firstPet = firstHousehold.pets[0];
+        const setupRequired = firstPet ? hasProfileErrors(validateProfile(firstPet.profile)) : true;
+        setProfileEditPetId(setupRequired ? firstPet?.id ?? null : null);
+        setActiveView(setupRequired ? "profile" : "overview");
+        setViewTransitionId((current) => current + 1);
+        writeViewHistory(setupRequired ? "profile" : "overview", "replace");
+        setAuthMessage(
+          localAccountData
+            ? "Restored this account's saved browser copy and synced it."
+            : "Your account is ready. Start by adding your first pet's profile."
+        );
       }
 
       setSyncStatus("synced");
@@ -1148,7 +1176,11 @@ export function PetHealthDashboard() {
 
   useEffect(() => {
     if (!ready) return;
-    const localSaveError = saveLocalPetMemory(appData);
+    const localSaveError = !supabase
+      ? saveLocalPetMemory(appData)
+      : user && cloudReadyForUser.current === user.id
+        ? saveLocalPetMemory(appData, accountStorageKey(user.id))
+        : null;
     if (localSaveError) {
       setAuthMessage(localSaveError);
     }
@@ -1174,7 +1206,8 @@ export function PetHealthDashboard() {
   }, [appData, ready, user]);
 
   const commit: CommitPetMemory = (updater, sections, petId) => {
-    setAppData((current) => {
+    const setMemoryData = isDemoPreview ? setDemoAppData : setAppData;
+    setMemoryData((current) => {
       const updatedAt = new Date().toISOString();
       const targetPetId = petId ?? current.activePetId;
       const changedSections = sections ? (Array.isArray(sections) ? sections : [sections]) : [];
@@ -1236,7 +1269,8 @@ export function PetHealthDashboard() {
   };
 
   const setActivePetId = (petId: string) => {
-    setAppData((current) => {
+    const setMemoryData = isDemoPreview ? setDemoAppData : setAppData;
+    setMemoryData((current) => {
       if (!current.pets.some((pet) => pet.id === petId)) return current;
       return { ...current, activePetId: petId, updatedAt: new Date().toISOString() };
     });
@@ -1245,7 +1279,33 @@ export function PetHealthDashboard() {
     writeViewHistory("overview", "replace");
   };
 
+  const openDemoPreview = (petId: string) => {
+    setDemoAppData({ ...seedAppData, activePetId: petId });
+    setIsDemoPreview(true);
+    setProfileEditPetId(null);
+    setActiveView("overview");
+    setViewTransitionId((current) => current + 1);
+    writeViewHistory("overview", "replace");
+  };
+
+  const exitDemoPreview = () => {
+    void deletePrivateFiles(demoAppData.pets.flatMap(privateFilesForPet));
+    setDemoAppData(seedAppData);
+    setIsDemoPreview(false);
+    const personalPet = appData.pets.find((pet) => pet.id === appData.activePetId) ?? appData.pets[0];
+    const setupRequired = personalPet ? hasProfileErrors(validateProfile(personalPet.profile)) : true;
+    setProfileEditPetId(setupRequired ? personalPet?.id ?? null : null);
+    setActiveView(setupRequired ? "profile" : "overview");
+    setViewTransitionId((current) => current + 1);
+    writeViewHistory(setupRequired ? "profile" : "overview", "replace");
+  };
+
   const addPet = () => {
+    const activePersonalPet = appData.pets.find((pet) => pet.id === appData.activePetId) ?? appData.pets[0];
+    if (isDemoPreview || (activePersonalPet && hasProfileErrors(validateProfile(activePersonalPet.profile)))) {
+      showNotice("Finish and save the current pet profile before adding another pet.", "error");
+      return;
+    }
     const pet = createBlankPetMemory();
     const updatedAt = new Date().toISOString();
     setAppData((current) => ({
@@ -1261,6 +1321,7 @@ export function PetHealthDashboard() {
   };
 
   const removeActivePet = () => {
+    if (isDemoPreview) return;
     if (appData.pets.length <= 1) return;
     if (!window.confirm(`Remove ${data.profile.name || "this pet"} from this household? Export JSON first if you need a backup.`)) return;
 
@@ -1458,10 +1519,12 @@ export function PetHealthDashboard() {
     await supabase.auth.signOut();
     cloudReadyForUser.current = null;
     skipNextCloudSave.current = false;
-    const clearError = clearLocalPetMemory();
+    const clearError = clearLocalPetMemory(user ? accountStorageKey(user.id) : STORAGE_KEY);
+    clearLocalPetMemory();
     await clearLocalPrivateFiles().catch(() => undefined);
-    loadedStoredLocalCopy.current = false;
-    setAppData(seedAppData);
+    setIsDemoPreview(false);
+    setDemoAppData(seedAppData);
+    setAppData(createEmptyAppMemory());
     setSyncStatus("signed-out");
     setAuthMessage(clearError ?? "Signed out and cleared this browser copy.");
   };
@@ -1502,11 +1565,13 @@ export function PetHealthDashboard() {
     await supabase.auth.signOut();
     cloudReadyForUser.current = null;
     skipNextCloudSave.current = false;
-    const clearError = clearLocalPetMemory();
+    const clearError = clearLocalPetMemory(accountStorageKey(user.id));
+    clearLocalPetMemory();
     await clearLocalPrivateFiles().catch(() => undefined);
-    loadedStoredLocalCopy.current = false;
     setUser(null);
-    setAppData(seedAppData);
+    setIsDemoPreview(false);
+    setDemoAppData(seedAppData);
+    setAppData(createEmptyAppMemory());
     setSyncStatus("signed-out");
     setAuthMessage(clearError ?? "Deleted synced data and cleared this browser copy.");
   };
@@ -1664,6 +1729,15 @@ export function PetHealthDashboard() {
     >
       <PwaStatusBanner isOnline={isOnline} updateReady={pwaUpdateReady} onUpdate={applyPwaUpdate} />
       <div className="mx-auto max-w-7xl">
+        {isDemoPreview && (
+          <div className="no-print mb-4 flex flex-col gap-3 rounded-lg border border-clinical/20 bg-skywash/80 p-4 text-sm text-ink shadow-soft sm:flex-row sm:items-center sm:justify-between" role="status">
+            <div>
+              <p className="font-semibold">Demo profile preview</p>
+              <p className="mt-1 leading-6 text-muted">Explore the sample care history freely. Demo changes stay in this session and are never saved to your account.</p>
+            </div>
+            <ActionButton icon={ArrowRight} label="Return to my pets" onClick={exitDemoPreview} variant="secondary" />
+          </div>
+        )}
         <header className="no-print pb-5">
           <div className="rounded-xl border border-ink/10 bg-white/90 p-4 shadow-soft sm:p-5">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -1688,7 +1762,7 @@ export function PetHealthDashboard() {
                       {data.profile.name || "New pet"}
                     </h1>
                     <span className="mb-1 rounded-lg border border-pine/15 bg-pine/5 px-2.5 py-1 text-sm font-semibold text-pine">
-                      Care dashboard
+                      {isDemoPreview ? "Demo profile" : "Care dashboard"}
                     </span>
                   </div>
                   <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
@@ -1705,8 +1779,10 @@ export function PetHealthDashboard() {
             <div className="order-1 flex w-full flex-wrap items-center justify-between gap-2 sm:justify-start xl:order-2 xl:w-auto xl:justify-end">
               <ActionButton icon={AlertTriangle} label="Emergency summary" onClick={() => requestView("emergency")} disabled={profileSetupRequired} />
               <AppMenu
-                pets={appData.pets}
+                pets={activeAppData.pets}
                 activePetId={data.id}
+                isDemoPreview={isDemoPreview}
+                canAddPet={!profileSetupRequired && !isDemoPreview}
                 configured={isSupabaseConfigured}
                 user={user}
                 syncStatus={syncStatus}
@@ -1714,14 +1790,10 @@ export function PetHealthDashboard() {
                 onPetChange={setActivePetId}
                 onAddPet={addPet}
                 onRemovePet={removeActivePet}
-                onExportJson={() => downloadJson(appData)}
+                onOpenDemo={openDemoPreview}
+                onExitDemo={exitDemoPreview}
+                onExportJson={() => downloadJson(activeAppData)}
                 onImportJson={importJson}
-                onResetSample={() => {
-                  clearLocalPetMemory();
-                  void clearLocalPrivateFiles();
-                  loadedStoredLocalCopy.current = false;
-                  setAppData(seedAppData);
-                }}
                 onSyncNow={syncNow}
                 onSignOut={signOut}
                 onDeleteData={deleteCloudAndLocalData}
@@ -1807,12 +1879,18 @@ export function PetHealthDashboard() {
               <ActiveIcon className="h-4 w-4" aria-hidden="true" />
               <span>{viewMeta[currentView].label}</span>
             </h2>
-            <SaveStateIndicator syncStatus={syncStatus} updatedAt={data.updatedAt} />
+            {isDemoPreview ? (
+              <span className="inline-flex min-h-10 items-center rounded-lg border border-clinical/15 bg-skywash px-3 py-2 text-xs font-semibold text-clinical">
+                Temporary demo · not saved
+              </span>
+            ) : (
+              <SaveStateIndicator syncStatus={syncStatus} updatedAt={data.updatedAt} />
+            )}
           </div>
 
           {profileSetupRequired && (
             <div className="no-print mb-5 rounded-lg border border-amber/20 bg-amber/10 p-4 text-sm leading-6 text-ink">
-              <p className="font-semibold">Finish this pet profile to unlock the care dashboard.</p>
+              <p className="font-semibold">{data.profile.name ? "Finish this pet profile" : "Welcome. Start by adding your first pet."}</p>
               <p className="mt-1 text-muted">Name, species, breed/type, birth date, sex, and weight are required so the health memory and vet summary start from a reliable record.</p>
             </div>
           )}
@@ -1830,14 +1908,14 @@ export function PetHealthDashboard() {
               setupRequired={profileSetupRequired}
               onStartInEditModeConsumed={() => setProfileEditPetId(null)}
               registerUndo={registerUndo}
-              userId={user?.id}
+              userId={isDemoPreview ? undefined : user?.id}
               showNotice={showNotice}
             />
           )}
           {currentView === "timeline" && <TimelineView data={data} commit={commit} />}
           {currentView === "meds" && <MedicationView data={data} commit={commit} registerUndo={registerUndo} />}
           {currentView === "symptoms" && (
-            <SymptomView data={data} commit={commit} userId={user?.id} showNotice={showNotice} />
+            <SymptomView data={data} commit={commit} userId={isDemoPreview ? undefined : user?.id} showNotice={showNotice} />
           )}
           {currentView === "expenses" && <ExpenseView data={data} commit={commit} />}
           {currentView === "trends" && <TrendsView data={data} metrics={metrics} commit={commit} />}
@@ -1849,7 +1927,7 @@ export function PetHealthDashboard() {
               data={data}
               commit={commit}
               registerUndo={registerUndo}
-              userId={user?.id}
+              userId={isDemoPreview ? undefined : user?.id}
               showNotice={showNotice}
             />
           )}
@@ -2141,6 +2219,8 @@ function PetFact({ label, value }: { label: string; value: string }) {
 function AppMenu({
   pets,
   activePetId,
+  isDemoPreview,
+  canAddPet,
   configured,
   user,
   syncStatus,
@@ -2148,15 +2228,18 @@ function AppMenu({
   onPetChange,
   onAddPet,
   onRemovePet,
+  onOpenDemo,
+  onExitDemo,
   onExportJson,
   onImportJson,
-  onResetSample,
   onSignOut,
   onSyncNow,
   onDeleteData
 }: {
   pets: PetMemoryData[];
   activePetId: string;
+  isDemoPreview: boolean;
+  canAddPet: boolean;
   configured: boolean;
   user: User | null;
   syncStatus: SyncStatus;
@@ -2164,9 +2247,10 @@ function AppMenu({
   onPetChange: (petId: string) => void;
   onAddPet: () => void;
   onRemovePet: () => void;
+  onOpenDemo: (petId: string) => void;
+  onExitDemo: () => void;
   onExportJson: () => void;
   onImportJson: (file: File) => void;
-  onResetSample: () => void;
   onSignOut: () => void;
   onSyncNow: () => void;
   onDeleteData: () => void;
@@ -2303,10 +2387,10 @@ function AppMenu({
             </div>
             <div className="space-y-5">
           <section>
-            <p className="text-xs font-semibold uppercase tracking-normal text-muted">Pet household</p>
+            <p className="text-xs font-semibold uppercase tracking-normal text-muted">{isDemoPreview ? "Demo profiles" : "Pet household"}</p>
             <div className="mt-3 rounded-lg border border-ink/10 bg-ivory p-3">
               <label className="grid gap-2 text-sm font-semibold text-ink">
-                Active pet
+                {isDemoPreview ? "Active demo pet" : "Active pet"}
                 <select
                   value={activePetId}
                   onChange={(event) => {
@@ -2324,23 +2408,66 @@ function AppMenu({
               <p className="mt-2 text-xs leading-5 text-muted">
                 {activePet ? displayBreed(activePet.profile) : "Species details not set"} · {activePet ? getAge(activePet.profile.birthDate) : "Age not set"}
               </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <ActionButton icon={Plus} label="Add pet" onClick={() => runAndClose(onAddPet)} variant="secondary" />
-                {pets.length > 1 ? (
-                  <ActionButton icon={Trash2} label="Remove pet" onClick={() => runAndClose(onRemovePet)} variant="danger" />
-                ) : (
+              {isDemoPreview ? (
+                <div className="mt-3">
+                  <ActionButton icon={ArrowRight} label="Return to my pets" onClick={() => runAndClose(onExitDemo)} variant="secondary" />
+                </div>
+              ) : (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <button
                     type="button"
-                    disabled
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-coral/20 bg-coral/5 px-3 py-2 text-sm font-semibold text-coral/60 opacity-60"
+                    disabled={!canAddPet}
+                    onClick={() => runAndClose(onAddPet)}
+                    title={canAddPet ? "Add another pet" : "Finish and save the current pet profile first"}
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:border-pine/40 hover:bg-mist disabled:cursor-not-allowed disabled:text-muted/60 disabled:opacity-60"
                   >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    Remove pet
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    Add pet
                   </button>
-                )}
-              </div>
+                  {pets.length > 1 ? (
+                    <ActionButton icon={Trash2} label="Remove pet" onClick={() => runAndClose(onRemovePet)} variant="danger" />
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-coral/20 bg-coral/5 px-3 py-2 text-sm font-semibold text-coral/60 opacity-60"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      Remove pet
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </section>
+
+          {!isDemoPreview && (
+            <section>
+              <p className="text-xs font-semibold uppercase tracking-normal text-muted">Demo profiles</p>
+              <div className="mt-3 rounded-lg border border-clinical/15 bg-skywash/60 p-3">
+                <p className="text-sm font-semibold text-ink">Explore before adding more data</p>
+                <p className="mt-1 text-xs leading-5 text-muted">Milo and Juno are temporary examples. They never join your pet household or sync to your account.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => runAndClose(() => onOpenDemo(seedData.id))}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-clinical/15 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:border-clinical/40 hover:bg-skywash"
+                  >
+                    <Sparkles className="h-4 w-4 text-clinical" aria-hidden="true" />
+                    Open Milo demo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runAndClose(() => onOpenDemo(seedExoticPetData.id))}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-clinical/15 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:border-clinical/40 hover:bg-skywash"
+                  >
+                    <Sparkles className="h-4 w-4 text-clinical" aria-hidden="true" />
+                    Open Juno demo
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
 
           <section>
             <div className="flex items-center justify-between gap-3">
@@ -2390,7 +2517,7 @@ function AppMenu({
             </div>
           </section>
 
-          <section>
+          {!isDemoPreview && <section>
             <p className="text-xs font-semibold uppercase tracking-normal text-muted">Data</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <ActionButton icon={Download} label="Export JSON" onClick={() => runAndClose(onExportJson)} variant="secondary" />
@@ -2409,9 +2536,8 @@ function AppMenu({
                   }}
                 />
               </label>
-              {!user && <ActionButton icon={RefreshCcw} label="Reset sample" onClick={() => runAndClose(onResetSample)} variant="secondary" />}
             </div>
-          </section>
+          </section>}
             </div>
           </div>
         </>

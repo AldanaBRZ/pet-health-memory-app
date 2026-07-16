@@ -2,11 +2,19 @@ import { expect, type Page } from "@playwright/test";
 
 export const viewportWidths = [320, 360, 390, 430, 768, 1280] as const;
 
-export async function openSeededApp(page: Page) {
+export async function openFreshApp(page: Page) {
   await page.goto("/");
   await expect(page.locator('[data-app-ready="true"]')).toBeVisible();
   await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).color)).toBe("rgb(23, 33, 49)");
+  await expect(page.getByRole("heading", { name: "New pet", exact: true })).toBeVisible();
+}
+
+export async function openSeededApp(page: Page) {
+  await openFreshApp(page);
+  await page.getByRole("button", { name: "Open app menu", exact: true }).click();
+  await page.getByRole("button", { name: "Open Milo demo", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Milo", exact: true })).toBeVisible();
+  await expect(page.getByText("Demo profile preview", { exact: true })).toBeVisible();
 }
 
 export async function openView(page: Page, buttonName: string, headingName = buttonName) {

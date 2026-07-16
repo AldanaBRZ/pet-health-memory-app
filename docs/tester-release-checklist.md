@@ -25,6 +25,8 @@ Use this before sending the app to outside testers.
 
 4. Test the deployed app in a fresh/private browser session.
    - Signed-out users should see the login/selling page, not demo pet data.
+   - A newly created tester account should open directly on an empty required pet profile.
+   - Milo and Juno should appear only after choosing a demo profile from the app menu, and reloading should return to the tester's real household.
    - A tester email should be able to sign in.
    - Creating/editing a pet should sync without a permission error.
    - Upload one profile image and one test PDF/image, then open and download both from a second signed-in browser.

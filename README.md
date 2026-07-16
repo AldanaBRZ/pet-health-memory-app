@@ -2,7 +2,7 @@
 
 A health memory and longevity tracker for serious pet parents.
 
-The app supports multi-pet households and non-conventional species. The sample household includes Milo, a dog with physio/vet history, and Juno, a bearded dragon with exotics-vet tracking.
+The app supports multi-pet households and non-conventional species. New accounts start with a blank, required first-pet profile. Milo, a dog with physio/vet history, and Juno, a bearded dragon with exotics-vet tracking, are available only as temporary demo profiles from the app menu and are never synced into a user's household.
 
 ## Local Development
 
@@ -11,7 +11,7 @@ pnpm install
 pnpm dev
 ```
 
-The app works without paid APIs or external services. Without Supabase env vars, data is stored in the browser with `localStorage`.
+The app works without paid APIs or external services. Without Supabase env vars, personal data is stored in the browser with `localStorage`. In configured builds, browser fallback data is scoped to the signed-in account instead of being shared between accounts on the same browser.
 
 ## Supabase Sync Setup
 
@@ -30,7 +30,7 @@ ALLOWED_TESTER_EMAILS=you@example.com,friend@example.com
 5. In Supabase Auth URL settings, set the site URL to your deployed Vercel URL and add local/dev redirect URLs as needed.
 6. For a private test, restrict signups/invites in Supabase Auth settings. `NEXT_PUBLIC_ALLOWED_TESTER_EMAILS` is only a browser-visible UX gate, not a security boundary.
 
-When a tester signs in, the app loads their synced pet household if it exists. If not, it migrates the current browser copy into their account. LocalStorage remains the fallback. If a browser has newer local changes than the cloud copy, the app pauses automatic overwrite and asks the tester to review/sync.
+When a tester signs in, the app loads their synced pet household if it exists. A new account receives a blank first-pet profile and cannot enter the care dashboard until its required details are saved. Account-scoped local storage remains the fallback. If the same account has newer local changes than the cloud copy, the app pauses automatic overwrite and asks the tester to review/sync.
 
 Signed-in testers can use **Sign out + clear** to remove the private browser copy, or **Delete data** to delete the synced Supabase row and clear the browser copy. The Supabase schema includes row-level policies for select/insert/update/delete and a JSON size guard.
 

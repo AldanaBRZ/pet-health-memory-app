@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { openSeededApp } from "./helpers";
+import { openFreshApp } from "./helpers";
 
 test("production app shell reopens offline without caching API traffic", async ({ page, context }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-chromium", "PWA cache lifecycle runs once in Chromium.");
-  await openSeededApp(page);
+  await openFreshApp(page);
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
@@ -25,7 +25,7 @@ test("production app shell reopens offline without caching API traffic", async (
 
   await context.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Milo", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New pet", exact: true })).toBeVisible();
   await page.goto("/missing-while-offline", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "You are offline", exact: true })).toBeVisible();
   await context.setOffline(false);

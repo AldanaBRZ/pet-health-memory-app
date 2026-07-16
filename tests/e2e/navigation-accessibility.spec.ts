@@ -1,5 +1,25 @@
 import { test, expect } from "@playwright/test";
-import { auditPage, expectCleanAudit, openSeededApp, openView } from "./helpers";
+import { auditPage, expectCleanAudit, openFreshApp, openSeededApp, openView } from "./helpers";
+
+test("fresh households require a real pet profile and keep demos optional", async ({ page }) => {
+  await openFreshApp(page);
+  await expect(page.getByText("Welcome. Start by adding your first pet.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Today", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Add pet", exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Open app menu", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "App menu", exact: true });
+  await expect(dialog.getByRole("button", { name: "Add pet", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Open Milo demo", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Open Juno demo", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Open Juno demo", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Juno", exact: true })).toBeVisible();
+  await expect(page.getByText("Temporary demo · not saved", { exact: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "New pet", exact: true })).toBeVisible();
+  await expect(page.getByText("Demo profile preview", { exact: true })).toHaveCount(0);
+});
 
 test("the app hydrates without replacing server-rendered content", async ({ page }) => {
   const pageErrors: string[] = [];
@@ -45,6 +65,7 @@ test("visible controls expose names and reduced motion is respected", async ({ p
   );
   expect(Number.parseFloat(transitionDuration)).toBeLessThanOrEqual(0.001);
 
+  await page.keyboard.press("Tab");
   await page.getByRole("button", { name: "Emergency summary", exact: true }).focus();
   const focusStyle = await page.evaluate(() => {
     const active = document.activeElement;
