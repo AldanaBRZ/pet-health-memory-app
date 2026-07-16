@@ -6,6 +6,7 @@ import {
   ArrowRight,
   BadgeDollarSign,
   Bell,
+  Camera,
   CalendarClock,
   ChevronDown,
   ChevronLeft,
@@ -34,6 +35,7 @@ import {
   RefreshCcw,
   Save,
   Search,
+  Share2,
   ShieldCheck,
   Sparkles,
   Stethoscope,
@@ -991,6 +993,8 @@ export function PetHealthDashboard() {
   const [profileEditPetId, setProfileEditPetId] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
   const [appNotice, setAppNotice] = useState<AppNotice | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [pwaUpdateReady, setPwaUpdateReady] = useState(false);
   const [moreToolsCanScrollLeft, setMoreToolsCanScrollLeft] = useState(false);
   const [moreToolsCanScrollRight, setMoreToolsCanScrollRight] = useState(false);
   const cloudReadyForUser = useRef<string | null>(null);
@@ -1002,11 +1006,34 @@ export function PetHealthDashboard() {
   const viewHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const moreToolsNavRef = useRef<HTMLElement | null>(null);
   const historyInitialized = useRef(false);
+  const pwaRegistration = useRef<ServiceWorkerRegistration | null>(null);
+  const reloadingForServiceWorker = useRef(false);
   const data = appData.pets.find((pet) => pet.id === appData.activePetId) ?? appData.pets[0] ?? seedData;
 
   useEffect(() => {
+    const updateConnectionState = () => {
+      setIsOnline(navigator.onLine);
+      if (navigator.onLine) void pwaRegistration.current?.update();
+    };
+
+    updateConnectionState();
+    window.addEventListener("online", updateConnectionState);
+    window.addEventListener("offline", updateConnectionState);
+    void registerServiceWorker({
+      onRegistered: (registration) => {
+        pwaRegistration.current = registration;
+      },
+      onUpdateReady: () => setPwaUpdateReady(true)
+    });
+
+    return () => {
+      window.removeEventListener("online", updateConnectionState);
+      window.removeEventListener("offline", updateConnectionState);
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
-    registerServiceWorker();
 
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
@@ -1579,24 +1606,44 @@ export function PetHealthDashboard() {
     setViewTransitionId((current) => current + 1);
   };
 
+  const applyPwaUpdate = () => {
+    const registration = pwaRegistration.current;
+    if (!registration?.waiting) return;
+
+    navigator.serviceWorker.addEventListener(
+      "controllerchange",
+      () => {
+        if (reloadingForServiceWorker.current) return;
+        reloadingForServiceWorker.current = true;
+        window.location.reload();
+      },
+      { once: true }
+    );
+    registration.waiting.postMessage({ type: "SKIP_WAITING" });
+  };
+
   if (isSupabaseConfigured && !user) {
     return (
-      <AuthLanding
-        email={authEmail}
-        password={authPassword}
-        syncStatus={syncStatus}
-        message={authMessage}
-        onEmailChange={setAuthEmail}
-        onPasswordChange={setAuthPassword}
-        onSendMagicLink={sendMagicLink}
-        onSignInWithPassword={signInWithPassword}
-        onCreatePasswordAccount={createPasswordAccount}
-      />
+      <>
+        <PwaStatusBanner isOnline={isOnline} updateReady={pwaUpdateReady} onUpdate={applyPwaUpdate} />
+        <AuthLanding
+          email={authEmail}
+          password={authPassword}
+          syncStatus={syncStatus}
+          message={authMessage}
+          onEmailChange={setAuthEmail}
+          onPasswordChange={setAuthPassword}
+          onSendMagicLink={sendMagicLink}
+          onSignInWithPassword={signInWithPassword}
+          onCreatePasswordAccount={createPasswordAccount}
+        />
+      </>
     );
   }
 
   return (
     <div className="print-root dynamic-screen app-safe-shell min-h-screen px-4 py-4 sm:px-6 lg:px-8">
+      <PwaStatusBanner isOnline={isOnline} updateReady={pwaUpdateReady} onUpdate={applyPwaUpdate} />
       <div className="mx-auto max-w-7xl">
         <header className="no-print pb-5">
           <div className="rounded-xl border border-ink/10 bg-white/90 p-4 shadow-soft sm:p-5">
@@ -1787,7 +1834,7 @@ export function PetHealthDashboard() {
               showNotice={showNotice}
             />
           )}
-          {currentView === "emergency" && <EmergencyView key={`emergency-${data.id}`} data={data} />}
+          {currentView === "emergency" && <EmergencyView key={`emergency-${data.id}`} data={data} showNotice={showNotice} />}
         </main>
       </div>
       {undoAction && <UndoBanner message={undoAction.message} onUndo={undoLastAction} onDismiss={dismissUndo} />}
@@ -1803,6 +1850,53 @@ export function PetHealthDashboard() {
         />
       )}
     </div>
+  );
+}
+
+function PwaStatusBanner({
+  isOnline,
+  updateReady,
+  onUpdate
+}: {
+  isOnline: boolean;
+  updateReady: boolean;
+  onUpdate: () => void;
+}) {
+  if (isOnline && !updateReady) return null;
+
+  const Icon = isOnline ? RefreshCcw : CloudOff;
+  return (
+    <>
+      <div
+        className="no-print fixed inset-x-0 top-0 z-[60] border-b border-ink/15 bg-ink px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white shadow-soft"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-white">{isOnline ? "A fresh version is ready" : "Working offline"}</p>
+              <p className="mt-0.5 text-xs leading-5 text-white/75">
+                {isOnline
+                  ? "Reload when convenient to use the latest app improvements."
+                  : "Changes stay on this device and will sync after your connection returns."}
+              </p>
+            </div>
+          </div>
+          {isOnline && updateReady && (
+            <button
+              type="button"
+              onClick={onUpdate}
+              className="shrink-0 rounded-lg border border-white/30 bg-white px-3 py-2 text-xs font-semibold text-ink transition hover:bg-mist"
+            >
+              Reload
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="no-print h-[calc(4.5rem+env(safe-area-inset-top))] sm:h-[calc(3.75rem+env(safe-area-inset-top))]" aria-hidden="true" />
+    </>
   );
 }
 
@@ -3646,6 +3740,22 @@ function ProfileView({
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                    className="sr-only"
+                    disabled={photoBusy}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      void uploadProfilePhoto(file);
+                    }}
+                  />
+                </label>
+                <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-pine/20 bg-white px-3 py-2 text-xs font-semibold text-pine transition hover:border-pine/40 hover:bg-mist">
+                  <Camera className="h-3.5 w-3.5" aria-hidden="true" />
+                  Take photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
                     className="sr-only"
                     disabled={photoBusy}
                     onChange={(event) => {
@@ -5795,7 +5905,7 @@ function VetVisitView({
   );
 }
 
-function EmergencyView({ data }: { data: PetMemoryData }) {
+function EmergencyView({ data, showNotice }: { data: PetMemoryData; showNotice: (message: string, tone?: "info" | "error") => void }) {
   const recentEvents = [...data.events].sort(sortByDateDesc("date")).slice(0, 6);
   const recentSymptoms = [...data.symptoms].sort(sortByDateDesc("dateTime")).slice(0, 5);
   const activeMeds = data.medications.filter((med) => med.status === "Active");
@@ -5812,6 +5922,7 @@ function EmergencyView({ data }: { data: PetMemoryData }) {
           <p className="mt-1 text-xs leading-5 text-muted">Print, save as PDF, or export a standalone HTML copy for a care professional.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ActionButton icon={Share2} label="Share Vet Packet" onClick={() => void shareVetPacket(data, showNotice)} />
           <ActionButton icon={Printer} label="Print / Save PDF" onClick={() => window.print()} />
           <ActionButton icon={Download} label="Download HTML Packet" onClick={() => downloadVetPacketHtml(data)} variant="secondary" />
         </div>
@@ -6116,22 +6227,40 @@ function DocumentsView({
               <span>PDF or image · 10 MB max</span>
             </div>
           </div>
-          <label className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-pine bg-pine px-3 py-2 text-sm font-semibold text-white shadow-soft transition ${uploading ? "cursor-wait opacity-65" : "cursor-pointer hover:bg-ink"}`}>
-            <Upload className="h-4 w-4" aria-hidden="true" />
-            {uploading ? "Saving files" : "Attach files"}
-            <input
-              className="sr-only"
-              type="file"
-              multiple
-              disabled={uploading}
-              accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
-              onChange={(event) => {
-                const files = event.target.files;
-                event.target.value = "";
-                void addDocuments(files);
-              }}
-            />
-          </label>
+          <div className="flex flex-wrap gap-2">
+            <label className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-pine bg-pine px-3 py-2 text-sm font-semibold text-white shadow-soft transition ${uploading ? "cursor-wait opacity-65" : "cursor-pointer hover:bg-ink"}`}>
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {uploading ? "Saving files" : "Attach files"}
+              <input
+                className="sr-only"
+                type="file"
+                multiple
+                disabled={uploading}
+                accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                onChange={(event) => {
+                  const files = event.target.files;
+                  event.target.value = "";
+                  void addDocuments(files);
+                }}
+              />
+            </label>
+            <label className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-pine/20 bg-mist px-3 py-2 text-sm font-semibold text-pine transition ${uploading ? "cursor-wait opacity-65" : "cursor-pointer hover:border-pine/40 hover:bg-sage/30"}`}>
+              <Camera className="h-4 w-4" aria-hidden="true" />
+              Scan document
+              <input
+                className="sr-only"
+                type="file"
+                capture="environment"
+                disabled={uploading}
+                accept="image/*"
+                onChange={(event) => {
+                  const files = event.target.files;
+                  event.target.value = "";
+                  void addDocuments(files);
+                }}
+              />
+            </label>
+          </div>
         </div>
 
         <div className="mt-5 rounded-lg border border-pine/15 bg-mist/55 p-4 text-sm leading-6 text-muted">
@@ -6692,23 +6821,48 @@ async function savePetMemoryToCloud(userId: string, data: AppMemoryData) {
   return error?.message ?? null;
 }
 
-function registerServiceWorker() {
+async function registerServiceWorker({
+  onRegistered,
+  onUpdateReady
+}: {
+  onRegistered: (registration: ServiceWorkerRegistration) => void;
+  onUpdateReady: () => void;
+}) {
   if (!("serviceWorker" in navigator)) return;
 
-  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  if (isLocalhost) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations.forEach((registration) => registration.unregister());
-    });
+  if (process.env.NODE_ENV !== "production") {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
     if ("caches" in window) {
-      caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key.startsWith("pet-health-memory-")).map((key) => caches.delete(key)));
     }
     return;
   }
 
-  if (window.location.protocol !== "https:") return;
+  if (window.location.protocol !== "https:" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") return;
 
-  navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  try {
+    const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
+    onRegistered(registration);
+    if (registration.waiting) onUpdateReady();
+
+    registration.addEventListener("updatefound", () => {
+      const worker = registration.installing;
+      if (!worker) return;
+      worker.addEventListener("statechange", () => {
+        if (worker.state === "installed" && navigator.serviceWorker.controller) onUpdateReady();
+      });
+    });
+
+    const checkForUpdate = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) void registration.update();
+    };
+    window.addEventListener("focus", checkForUpdate);
+    await navigator.serviceWorker.ready;
+  } catch {
+    // The app remains fully usable online and with local persistence when PWA registration is unavailable.
+  }
 }
 
 function preventionStatusTone(status: PreventionStatus) {
@@ -6955,6 +7109,67 @@ function downloadVetPacketHtml(data: PetMemoryData) {
     return;
   }
 
+  const html = buildVetPacketHtml(data);
+  downloadBlob(new Blob([html], { type: "text/html" }), `${safeDownloadName(data.profile.name || "pet")}-vet-packet.html`);
+}
+
+async function shareVetPacket(
+  data: PetMemoryData,
+  showNotice: (message: string, tone?: "info" | "error") => void
+) {
+  if (!("share" in navigator)) {
+    showNotice("Sharing is not supported in this browser. Use Download HTML Packet instead.", "error");
+    return;
+  }
+  if (
+    !window.confirm(
+      "Share this private Vet Packet?\n\nIt includes health details, medications, vet contacts, recent symptoms, and care notes. Choose only a person or app that should receive this pet's information."
+    )
+  ) {
+    return;
+  }
+
+  const title = `${data.profile.name || "Pet"} Vet Packet`;
+  const filename = `${safeDownloadName(data.profile.name || "pet")}-vet-packet.html`;
+  const file = new File([buildVetPacketHtml(data)], filename, { type: "text/html" });
+  const text = buildVetPacketShareText(data);
+
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ title, text: "Private care summary for a veterinary conversation.", files: [file] });
+    } else {
+      await navigator.share({ title, text });
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    showNotice(error instanceof Error ? `Could not share the Vet Packet: ${error.message}` : "Could not share the Vet Packet.", "error");
+  }
+}
+
+function buildVetPacketShareText(data: PetMemoryData) {
+  const activeMeds = data.medications
+    .filter((medication) => medication.status === "Active")
+    .map((medication) => `${medication.name}: ${medication.dosage}, ${medication.frequency}`);
+  const primaryVet = data.profile.vets[0];
+  const recentEvents = [...data.events]
+    .sort(sortByDateDesc("date"))
+    .slice(0, 3)
+    .map((event) => `${formatDate(event.date, true)}: ${event.title} - ${event.detail}`);
+
+  return [
+    `${data.profile.name || "Pet"} Vet Packet`,
+    `${displaySpecies(data.profile)} · ${displayBreed(data.profile)} · ${getAge(data.profile.birthDate)} · ${formatWeightKg(data.profile.weightKg)}`,
+    `Allergies: ${data.profile.allergies.join(", ") || "None listed"}`,
+    `Conditions: ${data.profile.conditions.join(", ") || "None listed"}`,
+    `Active medications: ${activeMeds.join("; ") || "None listed"}`,
+    primaryVet ? `Primary vet: ${primaryVet.clinic}, ${primaryVet.phone}` : "Primary vet: Not listed",
+    "Recent events:",
+    ...(recentEvents.length ? recentEvents : ["None recorded"]),
+    "Not medical advice. Owner-recorded information for discussion with a veterinarian."
+  ].join("\n");
+}
+
+function buildVetPacketHtml(data: PetMemoryData) {
   const activeMeds = data.medications
     .filter((med) => med.status === "Active")
     .map((med) => `<li>${escapeHtml(`${med.name}: ${med.dosage}, ${med.frequency}`)}</li>`)
@@ -6979,7 +7194,7 @@ function downloadVetPacketHtml(data: PetMemoryData) {
     .map((question) => `<li>${escapeHtml(question)}</li>`)
     .join("");
   const recent30 = getRecentChanges(data, 30);
-  const html = `<!doctype html>
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -7038,7 +7253,6 @@ function downloadVetPacketHtml(data: PetMemoryData) {
 </main>
 </body>
 </html>`;
-  downloadBlob(new Blob([html], { type: "text/html" }), `${safeDownloadName(data.profile.name || "pet")}-vet-packet.html`);
 }
 
 function safeDownloadName(value: string) {
