@@ -1,8 +1,9 @@
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 const CACHE_PREFIX = "pet-health-memory";
 const SHELL_CACHE = `${CACHE_PREFIX}-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
-const APP_SHELL = ["/offline", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+const OFFLINE_PATH = "/offline";
+const APP_SHELL = [OFFLINE_PATH, "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 function isCacheableResponse(response) {
   if (!response || !response.ok || (response.type !== "basic" && response.type !== "default")) return false;
@@ -19,14 +20,22 @@ async function cacheAppShell() {
   const shellCache = await caches.open(SHELL_CACHE);
   const rootResponse = await fetch(new Request("/", { cache: "reload" }));
   if (!rootResponse.ok) throw new Error("Could not fetch the application shell.");
+  const offlineResponse = await fetch(new Request(OFFLINE_PATH, { cache: "reload" }));
+  if (!offlineResponse.ok) throw new Error("Could not fetch the offline shell.");
 
   const rootHtml = await rootResponse.clone().text();
+  const offlineHtml = await offlineResponse.clone().text();
   await shellCache.put("/", rootResponse);
-  await Promise.allSettled(APP_SHELL.map((path) => shellCache.add(new Request(path, { cache: "reload" }))));
+  await shellCache.put(OFFLINE_PATH, offlineResponse);
+  await Promise.allSettled(
+    APP_SHELL.filter((path) => path !== OFFLINE_PATH).map((path) => shellCache.add(new Request(path, { cache: "reload" })))
+  );
 
   const staticCache = await caches.open(STATIC_CACHE);
   await Promise.allSettled(
-    staticAssetPaths(rootHtml).map((path) => staticCache.add(new Request(path, { cache: "reload" })))
+    [...new Set([...staticAssetPaths(rootHtml), ...staticAssetPaths(offlineHtml)])].map((path) =>
+      staticCache.add(new Request(path, { cache: "reload" }))
+    )
   );
 }
 
@@ -57,8 +66,8 @@ async function networkFirstNavigation(request) {
   try {
     return await fetch(request);
   } catch {
-    const fallbackPath = new URL(request.url).pathname === "/" ? "/" : "/offline";
-    return (await caches.match(fallbackPath)) ?? (await caches.match("/offline")) ?? Response.error();
+    const fallbackPath = new URL(request.url).pathname === "/" ? "/" : OFFLINE_PATH;
+    return (await caches.match(fallbackPath)) ?? (await caches.match(OFFLINE_PATH)) ?? Response.error();
   }
 }
 

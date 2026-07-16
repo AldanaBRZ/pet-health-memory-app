@@ -21,8 +21,7 @@ const contentSecurityPolicy = [
   "object-src 'none'",
   `script-src ${scriptSources.join(" ")}`,
   "style-src 'self' 'unsafe-inline'",
-  "worker-src 'self' blob:",
-  ...(isDev ? [] : ["upgrade-insecure-requests"])
+  "worker-src 'self' blob:"
 ].join("; ");
 
 const securityHeaders = [

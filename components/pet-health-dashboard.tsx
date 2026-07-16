@@ -1622,6 +1622,22 @@ export function PetHealthDashboard() {
     registration.waiting.postMessage({ type: "SKIP_WAITING" });
   };
 
+  if (!ready) {
+    return (
+      <main className="auth-safe-shell dynamic-screen flex min-h-screen items-center justify-center px-4 py-8">
+        <div className="flex max-w-sm items-center gap-3 rounded-lg border border-ink/10 bg-white/90 px-4 py-3 text-ink shadow-soft" role="status">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-mist text-pine">
+            <PawPrint className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold">Opening your pet household</p>
+            <p className="mt-0.5 text-xs leading-5 text-muted">Checking saved care data and account access.</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (isSupabaseConfigured && !user) {
     return (
       <>
@@ -1642,7 +1658,10 @@ export function PetHealthDashboard() {
   }
 
   return (
-    <div className="print-root dynamic-screen app-safe-shell min-h-screen px-4 py-4 sm:px-6 lg:px-8">
+    <div
+      data-app-ready="true"
+      className="print-root dynamic-screen app-safe-shell min-h-screen px-4 py-4 sm:px-6 lg:px-8"
+    >
       <PwaStatusBanner isOnline={isOnline} updateReady={pwaUpdateReady} onUpdate={applyPwaUpdate} />
       <div className="mx-auto max-w-7xl">
         <header className="no-print pb-5">
@@ -4739,9 +4758,9 @@ function SymptomView({
     }
   };
 
-  const chooseSymptomPhotos = (files: FileList | null) => {
-    if (!files?.length) return;
-    const selected = Array.from(files).slice(0, 5);
+  const chooseSymptomPhotos = (files: File[]) => {
+    if (!files.length) return;
+    const selected = files.slice(0, 5);
     const validationError = selected.map((file) => validatePrivateFile(file, "symptom")).find(Boolean);
     if (validationError) {
       showNotice(validationError, "error");
@@ -4792,7 +4811,7 @@ function SymptomView({
                 className="sr-only"
                 disabled={saving}
                 onChange={(event) => {
-                  const files = event.target.files;
+                  const files = Array.from(event.target.files ?? []);
                   event.target.value = "";
                   chooseSymptomPhotos(files);
                 }}
@@ -6129,8 +6148,8 @@ function DocumentsView({
   const sortedDocuments = [...data.documents].sort(sortByDateDesc("date"));
   const attachedCount = data.documents.filter((document) => document.attachment).length;
 
-  const addDocuments = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const addDocuments = async (files: File[]) => {
+    if (!files.length) return;
     if (files.length > 10) {
       showNotice("Attach up to 10 files at a time.", "error");
       return;
@@ -6139,7 +6158,7 @@ function DocumentsView({
     setUploading(true);
     const uploaded: VetDocument[] = [];
     const errors: string[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of files) {
       const validationError = validatePrivateFile(file, "document");
       if (validationError) {
         errors.push(`${file.name}: ${validationError}`);
@@ -6238,7 +6257,7 @@ function DocumentsView({
                 disabled={uploading}
                 accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
                 onChange={(event) => {
-                  const files = event.target.files;
+                  const files = Array.from(event.target.files ?? []);
                   event.target.value = "";
                   void addDocuments(files);
                 }}
@@ -6254,7 +6273,7 @@ function DocumentsView({
                 disabled={uploading}
                 accept="image/*"
                 onChange={(event) => {
-                  const files = event.target.files;
+                  const files = Array.from(event.target.files ?? []);
                   event.target.value = "";
                   void addDocuments(files);
                 }}
@@ -6276,7 +6295,7 @@ function DocumentsView({
           {sortedDocuments.map((document) => {
             const isEditing = editingId === document.id && draft;
             return (
-              <article key={document.id} className="rounded-lg border border-ink/10 bg-white/75 p-4">
+              <article key={document.id} className="min-w-0 rounded-lg border border-ink/10 bg-white/75 p-4">
                 {isEditing ? (
                   <div className="grid gap-4">
                     <div className="grid gap-3 sm:grid-cols-2">

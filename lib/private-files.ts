@@ -21,6 +21,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 };
 
 type FileKind = "profile" | "document" | "symptom";
+type StoredLocalFile = { bytes: ArrayBuffer; mimeType: string };
 
 function attachmentId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -87,13 +88,18 @@ async function runLocalRequest<T>(mode: IDBTransactionMode, operation: (store: I
 }
 
 async function saveLocalFile(storagePath: string, file: File) {
-  await runLocalRequest("readwrite", (store) => store.put(file, storagePath));
+  const storedFile: StoredLocalFile = {
+    bytes: await file.arrayBuffer(),
+    mimeType: normalizedMimeType(file)
+  };
+  await runLocalRequest("readwrite", (store) => store.put(storedFile, storagePath));
 }
 
 async function loadLocalFile(storagePath: string) {
-  const result = await runLocalRequest<Blob | undefined>("readonly", (store) => store.get(storagePath));
+  const result = await runLocalRequest<Blob | StoredLocalFile | undefined>("readonly", (store) => store.get(storagePath));
   if (!result) throw new Error("This file is no longer available on this device.");
-  return result;
+  if (result instanceof Blob) return result;
+  return new Blob([result.bytes], { type: result.mimeType });
 }
 
 async function deleteLocalFile(storagePath: string) {

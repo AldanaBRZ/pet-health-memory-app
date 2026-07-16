@@ -33,6 +33,8 @@ Use this before sending the app to outside testers.
    - Export warnings should appear before JSON or Vet Packet HTML downloads, and should explain that private file contents are not embedded.
 
 5. For phone testers, open the production HTTPS URL and use Add to Home Screen.
+   - Run `pnpm run verify` first.
+   - Complete the physical-device checks in `docs/mobile-release-matrix.md` on at least one iPhone and one Android phone.
 
 ## Short Reminder
 

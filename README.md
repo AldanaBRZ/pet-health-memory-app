@@ -59,6 +59,17 @@ Without Supabase, file contents are stored in browser IndexedDB and marked as de
 
 The app includes a manifest, service worker, and app icons. On a deployed HTTPS URL, phone testers can use Safari/Chrome's "Add to Home Screen" flow.
 
+Run the full local verification suite with:
+
+```bash
+pnpm exec playwright install chromium webkit
+pnpm run verify
+```
+
+This runs TypeScript, lint, a production build, and Playwright checks across desktop Chromium, Android-like Chromium, and iPhone-like WebKit. The browser suite covers the responsive viewport matrix, horizontal overflow, touch targets, mobile form sizing, navigation history, menu accessibility, reduced motion, local uploads, camera inputs, Vet Packet sharing/print contracts, the manifest, and offline reopening.
+
+Before inviting outside testers, also complete [the physical mobile release matrix](docs/mobile-release-matrix.md). Real-device testing remains necessary for operating-system share sheets, camera permissions, email authentication redirects, installed-PWA lifecycle, and on-screen keyboards.
+
 ## Native Apps
 
 Native iOS/Android App Store builds are intentionally deferred until the web/PWA version has active tester feedback.
