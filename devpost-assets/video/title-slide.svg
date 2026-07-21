@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#f6f4ef"/>
+  <rect width="1280" height="12" fill="#265f52"/>
+  <rect x="78" y="82" width="58" height="58" rx="8" fill="#265f52"/>
+  <text x="107" y="121" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="30" font-weight="700" text-anchor="middle">C</text>
+  <text x="156" y="119" fill="#265f52" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="23" font-weight="700">PET HEALTH MEMORY</text>
+  <text x="78" y="258" fill="#172135" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="82" font-weight="750">Continuum</text>
+  <text x="82" y="318" fill="#52657a" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="35" font-weight="600">Pet Health Memory</text>
+  <text x="82" y="408" fill="#172135" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="31">Pets cannot explain what changed.</text>
+  <text x="82" y="452" fill="#172135" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="31">Continuum helps their people remember.</text>
+  <line x1="82" y1="540" x2="1070" y2="540" stroke="#c8d8d2" stroke-width="4"/>
+  <circle cx="286" cy="540" r="13" fill="#c75d45"/>
+  <circle cx="578" cy="540" r="13" fill="#265f52"/>
+  <circle cx="876" cy="540" r="13" fill="#3f8b83"/>
+  <text x="286" y="588" fill="#52657a" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" text-anchor="middle">OBSERVE</text>
+  <text x="578" y="588" fill="#52657a" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" text-anchor="middle">REMEMBER</text>
+  <text x="876" y="588" fill="#52657a" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" text-anchor="middle">EXPLAIN</text>
+  <text x="82" y="664" fill="#52657a" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20">A private health memory and longevity tracker for serious pet parents.</text>
+</svg>

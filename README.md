@@ -28,10 +28,14 @@ GPT-5.6 was used during development through Codex. It is not required to run Con
 
 ## Local Development
 
+Requirements: Node.js 20.9 or newer and pnpm 11.
+
 ```bash
 pnpm install
 pnpm dev
 ```
+
+Then open [http://localhost:3000](http://localhost:3000). If that port is already in use, Next.js will print the alternate local URL in the terminal.
 
 The app works without paid APIs or external services. Without Supabase env vars, personal data is stored in the browser with `localStorage`. In configured builds, browser fallback data is scoped to the signed-in account instead of being shared between accounts on the same browser.
 
@@ -86,9 +90,10 @@ Run the full local verification suite with:
 ```bash
 pnpm exec playwright install chromium webkit
 pnpm run verify
+pnpm run build
 ```
 
-This runs TypeScript, lint, a production build, and Playwright checks across desktop Chromium, Android-like Chromium, and iPhone-like WebKit. The browser suite covers the responsive viewport matrix, horizontal overflow, touch targets, mobile form sizing, navigation history, menu accessibility, reduced motion, local uploads, camera inputs, Vet Packet sharing/print contracts, the manifest, and offline reopening.
+These commands run TypeScript checks, lint, Playwright coverage across desktop Chromium, Android-like Chromium, and iPhone-like WebKit, and a production build. The browser suite covers the responsive viewport matrix, horizontal overflow, touch targets, mobile form sizing, navigation history, menu accessibility, reduced motion, local uploads, camera inputs, Vet Packet sharing/print contracts, the manifest, and offline reopening.
 
 Before inviting outside testers, also complete [the physical mobile release matrix](docs/mobile-release-matrix.md). Real-device testing remains necessary for operating-system share sheets, camera permissions, email authentication redirects, installed-PWA lifecycle, and on-screen keyboards.
 

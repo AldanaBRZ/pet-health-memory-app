@@ -1,0 +1,53 @@
+{
+  "duration": 147.534,
+  "chapters": [
+    {
+      "title": "Opening",
+      "seconds": 0
+    },
+    {
+      "title": "App overview",
+      "seconds": 7.01
+    },
+    {
+      "title": "Today care",
+      "seconds": 17.38
+    },
+    {
+      "title": "Searchable timeline",
+      "seconds": 24.9
+    },
+    {
+      "title": "What changed",
+      "seconds": 36.41
+    },
+    {
+      "title": "Vet Visit Mode",
+      "seconds": 51.6
+    },
+    {
+      "title": "Vet Packet",
+      "seconds": 66.2
+    },
+    {
+      "title": "Care Plan and trends",
+      "seconds": 82.07
+    },
+    {
+      "title": "Longevity and documents",
+      "seconds": 99.63
+    },
+    {
+      "title": "Built with Codex and GPT-5.6",
+      "seconds": 126.94
+    },
+    {
+      "title": "Closing",
+      "seconds": 140.52
+    },
+    {
+      "title": "End",
+      "seconds": 147.53
+    }
+  ]
+}

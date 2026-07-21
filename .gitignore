@@ -8,5 +8,14 @@ dist
 .DS_Store
 *.log
 *.tsbuildinfo
+*.pyc
+__pycache__/
 playwright-report/
 test-results/
+
+# Keep large, editable submission exports local. The source slides, scripts,
+# screenshots, and narration notes remain tracked in devpost-assets/.
+devpost-assets/video/*.m4a
+devpost-assets/video/*.mov
+devpost-assets/video/*.mp4
+devpost-assets/video/*.webm

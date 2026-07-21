@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#f6f4ef"/>
+  <rect x="0" y="0" width="468" height="720" fill="#265f52"/>
+  <text x="64" y="105" fill="#dcebe6" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700">HOW I BUILT IT</text>
+  <text x="64" y="220" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="60" font-weight="750">Codex</text>
+  <text x="64" y="285" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="40" font-weight="600">with GPT-5.6</text>
+  <text x="64" y="390" fill="#dcebe6" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24">Built through many small</text>
+  <text x="64" y="425" fill="#dcebe6" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24">iterations, not one prompt.</text>
+  <line x1="64" y1="500" x2="390" y2="500" stroke="#c75d45" stroke-width="6"/>
+  <text x="64" y="560" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="21">I made the product decisions.</text>
+  <text x="64" y="592" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="21">Codex helped me build and test them.</text>
+
+  <text x="545" y="120" fill="#172135" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="42" font-weight="750">Built in conversation.</text>
+  <text x="545" y="168" fill="#52657a" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25">Tested in the browser. Revised when it did not feel right.</text>
+
+  <circle cx="568" cy="257" r="12" fill="#c75d45"/>
+  <text x="602" y="266" fill="#172135" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="650">TypeScript models and care workflows</text>
+
+  <circle cx="568" cy="345" r="12" fill="#265f52"/>
+  <text x="602" y="354" fill="#172135" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="650">Supabase security, sync, and private files</text>
+
+  <circle cx="568" cy="433" r="12" fill="#3f8b83"/>
+  <text x="602" y="442" fill="#172135" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="650">Responsive PWA design and debugging</text>
+
+  <circle cx="568" cy="521" r="12" fill="#c75d45"/>
+  <text x="602" y="530" fill="#172135" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="650">Playwright tests across desktop and mobile</text>
+
+  <circle cx="568" cy="609" r="12" fill="#265f52"/>
+  <text x="602" y="618" fill="#172135" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="650">Medical-safety language and product review</text>
+</svg>
