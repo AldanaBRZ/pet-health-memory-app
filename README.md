@@ -4,6 +4,28 @@ A health memory and longevity tracker for serious pet parents.
 
 The app supports multi-pet households and non-conventional species. New accounts start with a blank, required first-pet profile. Milo, a dog with physio/vet history, and Juno, a bearded dragon with exotics-vet tracking, are available only as temporary demo profiles from the app menu and are never synced into a user's household.
 
+## Demo Profiles
+
+Open the public demo at [pet-health-memory-app.vercel.app/demo](https://pet-health-memory-app.vercel.app/demo) to explore a complete care history for Milo and Juno without creating an account. The signed-out page also links directly to this experience, and signed-in users can open the same examples from **Menu → Demo profiles**.
+
+Public demo mode is deliberately isolated: demo edits live only in React state, reset when the page is refreshed or closed, and are never written to local storage or Supabase. File uploads and runtime AI requests are disabled. The included document records are safe sample placeholders rather than real files.
+
+## Built With Codex and GPT-5.6
+
+Continuum was developed iteratively with Codex using GPT-5.6. This was not a one-shot generated application. Codex was used as an engineering collaborator across repeated inspect, plan, implement, test, and review cycles.
+
+The Codex and GPT-5.6 workflow included:
+
+- translating the product idea into TypeScript models and working care flows;
+- implementing and reviewing Supabase authentication, account-scoped sync, private Storage policies, and Row Level Security;
+- debugging hydration, reload, local-storage isolation, and multi-pet state issues;
+- reviewing the repository for security risks and tightening uploads, server-side AI requests, and destructive actions;
+- iterating on desktop and mobile UX from screenshots and hands-on browser testing;
+- building Playwright coverage across desktop Chromium, Android-like Chromium, and iPhone-like WebKit;
+- checking that summaries are framed as observations and veterinary discussion questions rather than diagnosis or treatment advice.
+
+GPT-5.6 was used during development through Codex. It is not required to run Continuum. The application's optional runtime AI summary is a separate, opt-in feature; all core tracking, summaries, questions, and exports work without a paid API.
+
 ## Local Development
 
 ```bash

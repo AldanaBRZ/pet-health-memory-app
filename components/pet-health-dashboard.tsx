@@ -992,16 +992,16 @@ function safeTimestamp(value?: string | null) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-export function PetHealthDashboard() {
+export function PetHealthDashboard({ publicDemo = false }: { publicDemo?: boolean }) {
   const [appData, setAppData] = useState<AppMemoryData>(() => createEmptyAppMemory());
   const [demoAppData, setDemoAppData] = useState<AppMemoryData>(seedAppData);
-  const [isDemoPreview, setIsDemoPreview] = useState(false);
+  const [isDemoPreview, setIsDemoPreview] = useState(publicDemo);
   const [fallbackPet] = useState<PetMemoryData>(() => createBlankPetMemory());
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(publicDemo);
   const [activeView, setActiveView] = useState<ViewId>("overview");
   const [viewTransitionId, setViewTransitionId] = useState(0);
   const [user, setUser] = useState<User | null>(null);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>(isSupabaseConfigured ? "checking" : "local");
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(publicDemo ? "local" : isSupabaseConfigured ? "checking" : "local");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
@@ -1050,6 +1050,15 @@ export function PetHealthDashboard() {
   useEffect(() => {
     let mounted = true;
 
+    if (publicDemo) {
+      return () => {
+        mounted = false;
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        if (undoTimer.current) clearTimeout(undoTimer.current);
+        if (noticeTimer.current) clearTimeout(noticeTimer.current);
+      };
+    }
+
     if (!supabase) {
       const stored = readLocalPetMemory();
       if (stored && !isLegacyDemoHousehold(stored)) {
@@ -1097,11 +1106,11 @@ export function PetHealthDashboard() {
       if (undoTimer.current) clearTimeout(undoTimer.current);
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
     };
-  }, []);
+  }, [publicDemo]);
 
   useEffect(() => {
     const client = supabase;
-    if (!ready || !client || !user) return;
+    if (publicDemo || !ready || !client || !user) return;
 
     let cancelled = false;
 
@@ -1172,10 +1181,10 @@ export function PetHealthDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [ready, user]);
+  }, [publicDemo, ready, user]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (publicDemo || !ready) return;
     const localSaveError = !supabase
       ? saveLocalPetMemory(appData)
       : user && cloudReadyForUser.current === user.id
@@ -1203,7 +1212,7 @@ export function PetHealthDashboard() {
       setSyncStatus("synced");
       setAuthMessage(`Synced ${formatDate(new Date().toISOString(), true)}.`);
     }, 900);
-  }, [appData, ready, user]);
+  }, [appData, publicDemo, ready, user]);
 
   const commit: CommitPetMemory = (updater, sections, petId) => {
     const setMemoryData = isDemoPreview ? setDemoAppData : setAppData;
@@ -1289,6 +1298,11 @@ export function PetHealthDashboard() {
   };
 
   const exitDemoPreview = () => {
+    if (publicDemo) {
+      setDemoAppData(seedAppData);
+      window.location.assign("/");
+      return;
+    }
     void deletePrivateFiles(demoAppData.pets.flatMap(privateFilesForPet));
     setDemoAppData(seedAppData);
     setIsDemoPreview(false);
@@ -1621,7 +1635,7 @@ export function PetHealthDashboard() {
   }, [currentView, showMoreToolsNav, updateMoreToolsOverflow]);
 
   useEffect(() => {
-    if (!ready || (isSupabaseConfigured && !user)) {
+    if (!ready || (isSupabaseConfigured && !user && !publicDemo)) {
       historyInitialized.current = false;
       return;
     }
@@ -1642,7 +1656,7 @@ export function PetHealthDashboard() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [currentView, data.id, profileSetupRequired, ready, user]);
+  }, [currentView, data.id, profileSetupRequired, publicDemo, ready, user]);
 
   useEffect(() => {
     if (!ready || !profileSetupRequired) return;
@@ -1703,7 +1717,7 @@ export function PetHealthDashboard() {
     );
   }
 
-  if (isSupabaseConfigured && !user) {
+  if (isSupabaseConfigured && !user && !publicDemo) {
     return (
       <>
         <PwaStatusBanner isOnline={isOnline} updateReady={pwaUpdateReady} onUpdate={applyPwaUpdate} />
@@ -1725,6 +1739,7 @@ export function PetHealthDashboard() {
   return (
     <div
       data-app-ready="true"
+      data-demo-mode={publicDemo ? "public" : isDemoPreview ? "preview" : undefined}
       className="print-root dynamic-screen app-safe-shell min-h-screen px-4 py-4 sm:px-6 lg:px-8"
     >
       <PwaStatusBanner isOnline={isOnline} updateReady={pwaUpdateReady} onUpdate={applyPwaUpdate} />
@@ -1732,10 +1747,19 @@ export function PetHealthDashboard() {
         {isDemoPreview && (
           <div className="no-print mb-4 flex flex-col gap-3 rounded-lg border border-clinical/20 bg-skywash/80 p-4 text-sm text-ink shadow-soft sm:flex-row sm:items-center sm:justify-between" role="status">
             <div>
-              <p className="font-semibold">Demo profile preview</p>
-              <p className="mt-1 leading-6 text-muted">Explore the sample care history freely. Demo changes stay in this session and are never saved to your account.</p>
+              <p className="font-semibold">{publicDemo ? "Public demo" : "Demo profile preview"}</p>
+              <p className="mt-1 leading-6 text-muted">
+                {publicDemo
+                  ? "Explore Milo and Juno with temporary sample data. Changes reset when you leave or refresh, and nothing is saved or synced."
+                  : "Explore the sample care history freely. Demo changes stay in this session and are never saved to your account."}
+              </p>
             </div>
-            <ActionButton icon={ArrowRight} label="Return to my pets" onClick={exitDemoPreview} variant="secondary" />
+            <ActionButton
+              icon={ArrowRight}
+              label={publicDemo ? "Exit demo / Sign in" : "Return to my pets"}
+              onClick={exitDemoPreview}
+              variant="secondary"
+            />
           </div>
         )}
         <header className="no-print pb-5">
@@ -1782,6 +1806,7 @@ export function PetHealthDashboard() {
                 pets={activeAppData.pets}
                 activePetId={data.id}
                 isDemoPreview={isDemoPreview}
+                publicDemo={publicDemo}
                 canAddPet={!profileSetupRequired && !isDemoPreview}
                 configured={isSupabaseConfigured}
                 user={user}
@@ -1909,18 +1934,25 @@ export function PetHealthDashboard() {
               onStartInEditModeConsumed={() => setProfileEditPetId(null)}
               registerUndo={registerUndo}
               userId={isDemoPreview ? undefined : user?.id}
+              demoMode={publicDemo}
               showNotice={showNotice}
             />
           )}
           {currentView === "timeline" && <TimelineView data={data} commit={commit} />}
           {currentView === "meds" && <MedicationView data={data} commit={commit} registerUndo={registerUndo} />}
           {currentView === "symptoms" && (
-            <SymptomView data={data} commit={commit} userId={isDemoPreview ? undefined : user?.id} showNotice={showNotice} />
+            <SymptomView
+              data={data}
+              commit={commit}
+              userId={isDemoPreview ? undefined : user?.id}
+              demoMode={publicDemo}
+              showNotice={showNotice}
+            />
           )}
           {currentView === "expenses" && <ExpenseView data={data} commit={commit} />}
           {currentView === "trends" && <TrendsView data={data} metrics={metrics} commit={commit} />}
           {currentView === "longevity" && <LongevityView key={`longevity-${data.id}`} data={data} metrics={metrics} commit={commit} />}
-          {currentView === "recent" && <RecentView data={data} />}
+          {currentView === "recent" && <RecentView data={data} demoMode={publicDemo} />}
           {currentView === "visit" && <VetVisitView data={data} setActiveView={requestView} />}
           {currentView === "documents" && (
             <DocumentsView
@@ -1928,6 +1960,7 @@ export function PetHealthDashboard() {
               commit={commit}
               registerUndo={registerUndo}
               userId={isDemoPreview ? undefined : user?.id}
+              demoMode={publicDemo}
               showNotice={showNotice}
             />
           )}
@@ -2220,6 +2253,7 @@ function AppMenu({
   pets,
   activePetId,
   isDemoPreview,
+  publicDemo,
   canAddPet,
   configured,
   user,
@@ -2239,6 +2273,7 @@ function AppMenu({
   pets: PetMemoryData[];
   activePetId: string;
   isDemoPreview: boolean;
+  publicDemo: boolean;
   canAddPet: boolean;
   configured: boolean;
   user: User | null;
@@ -2410,7 +2445,12 @@ function AppMenu({
               </p>
               {isDemoPreview ? (
                 <div className="mt-3">
-                  <ActionButton icon={ArrowRight} label="Return to my pets" onClick={() => runAndClose(onExitDemo)} variant="secondary" />
+                  <ActionButton
+                    icon={ArrowRight}
+                    label={publicDemo ? "Exit demo / Sign in" : "Return to my pets"}
+                    onClick={() => runAndClose(onExitDemo)}
+                    variant="secondary"
+                  />
                 </div>
               ) : (
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -2469,6 +2509,27 @@ function AppMenu({
             </section>
           )}
 
+          {publicDemo ? (
+            <section>
+              <p className="text-xs font-semibold uppercase tracking-normal text-muted">Demo access</p>
+              <div className="mt-3 rounded-lg border border-clinical/15 bg-skywash/60 p-3">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-clinical">
+                    <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-ink">Private by design</p>
+                    <p className="mt-1 text-xs leading-5 text-muted">
+                      No account is connected. Demo changes are temporary, uploads are disabled, and nothing is saved or synced.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <ActionButton icon={LogOut} label="Exit demo and sign in" onClick={() => runAndClose(onExitDemo)} variant="secondary" />
+                </div>
+              </div>
+            </section>
+          ) : (
           <section>
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold uppercase tracking-normal text-muted">Account</p>
@@ -2516,6 +2577,7 @@ function AppMenu({
               </div>
             </div>
           </section>
+          )}
 
           {!isDemoPreview && <section>
             <p className="text-xs font-semibold uppercase tracking-normal text-muted">Data</p>
@@ -2707,14 +2769,31 @@ function AuthLanding({
             {message && <p className="text-sm font-medium text-muted">{message}</p>}
           </div>
 
-          <div className="mt-6 rounded-lg border border-ink/10 bg-ivory p-4">
+          <div className="mt-6 rounded-lg border border-pine/15 bg-mist/65 p-4">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
-              <CheckCircle2 className="h-4 w-4 text-pine" aria-hidden="true" />
-              For testing
+              <Sparkles className="h-4 w-4 text-pine" aria-hidden="true" />
+              Explore without an account
             </h3>
             <p className="mt-2 text-sm leading-6 text-muted">
-              Use the email invited for this beta. If magic links are rate-limited, sign in with the beta password created
-              for your tester account.
+              Open a complete sample household for Milo and Juno. You can try the care tools freely; changes are temporary
+              and reset when you leave or refresh.
+            </p>
+            <a
+              href="/demo"
+              className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-pine/20 bg-white px-4 py-2 text-sm font-semibold text-pine shadow-sm transition hover:border-pine/40 hover:bg-mist"
+            >
+              Explore demo household
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </a>
+          </div>
+
+          <div className="mt-3 rounded-lg border border-ink/10 bg-ivory p-4">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <CheckCircle2 className="h-4 w-4 text-pine" aria-hidden="true" />
+              Invited beta tester
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Use your invited email to create a private household. If magic links are rate-limited, sign in with the beta password for your tester account.
             </p>
           </div>
         </section>
@@ -3598,6 +3677,7 @@ function ProfileView({
   onStartInEditModeConsumed,
   registerUndo,
   userId,
+  demoMode = false,
   showNotice
 }: {
   data: PetMemoryData;
@@ -3607,6 +3687,7 @@ function ProfileView({
   onStartInEditModeConsumed?: () => void;
   registerUndo: RegisterUndo;
   userId?: string;
+  demoMode?: boolean;
   showNotice: (message: string, tone?: AppNotice["tone"]) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -3784,6 +3865,10 @@ function ProfileView({
 
   const uploadProfilePhoto = async (file?: File) => {
     if (!file) return;
+    if (demoMode) {
+      showNotice("Uploads are disabled in the temporary demo.");
+      return;
+    }
     const validationError = validatePrivateFile(file, "profile");
     if (validationError) {
       showNotice(validationError, "error");
@@ -3816,6 +3901,7 @@ function ProfileView({
   };
 
   const removeProfilePhoto = () => {
+    if (demoMode) return;
     const photo = data.profile.photo;
     if (!photo || !window.confirm("Remove this pet's profile photo? You can undo this for a few seconds.")) return;
     commit((current) => ({ ...current, profile: { ...current.profile, photo: undefined } }), "profile", data.id);
@@ -3877,7 +3963,12 @@ function ProfileView({
                 ? `${attachmentStorageLabel(data.profile.photo)} · ${formatPrivateFileSize(data.profile.photo.size)}`
                 : "Add a clear photo to make pets easier to recognize in a multi-pet household."}
             </p>
-            {isEditing && (
+            {isEditing && demoMode && (
+              <p className="mt-3 rounded-lg border border-clinical/15 bg-skywash px-3 py-2 text-xs leading-5 text-muted">
+                Profile photo uploads are disabled in the public demo. No files leave your device.
+              </p>
+            )}
+            {isEditing && !demoMode && (
               <div className="mt-3 flex flex-wrap gap-2">
                 <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-pine/20 bg-mist px-3 py-2 text-xs font-semibold text-pine transition hover:border-pine/40 hover:bg-sage/30">
                   <Upload className="h-3.5 w-3.5" aria-hidden="true" />
@@ -4823,11 +4914,13 @@ function SymptomView({
   data,
   commit,
   userId,
+  demoMode = false,
   showNotice
 }: {
   data: PetMemoryData;
   commit: CommitPetMemory;
   userId?: string;
+  demoMode?: boolean;
   showNotice: (message: string, tone?: AppNotice["tone"]) => void;
 }) {
   const [draft, setDraft] = useState<SymptomLog>(emptySymptom);
@@ -4886,6 +4979,10 @@ function SymptomView({
 
   const chooseSymptomPhotos = (files: File[]) => {
     if (!files.length) return;
+    if (demoMode) {
+      showNotice("Uploads are disabled in the temporary demo.");
+      return;
+    }
     const selected = files.slice(0, 5);
     const validationError = selected.map((file) => validatePrivateFile(file, "symptom")).find(Boolean);
     if (validationError) {
@@ -4927,22 +5024,28 @@ function SymptomView({
             <textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} className="input min-h-28" />
           </Field>
           <Field label="Symptom photos" helper="Optional · up to 5 images · 10 MB each">
-            <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-pine/30 bg-mist/45 px-3 py-2 text-sm font-semibold text-pine transition hover:border-pine/50 hover:bg-mist">
-              <Upload className="h-4 w-4" aria-hidden="true" />
-              {photoFiles.length > 0 ? "Choose different photos" : "Attach photos"}
-              <input
-                type="file"
-                multiple
-                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
-                className="sr-only"
-                disabled={saving}
-                onChange={(event) => {
-                  const files = Array.from(event.target.files ?? []);
-                  event.target.value = "";
-                  chooseSymptomPhotos(files);
-                }}
-              />
-            </label>
+            {demoMode ? (
+              <div className="rounded-lg border border-clinical/15 bg-skywash px-3 py-3 text-sm leading-6 text-muted">
+                Photo uploads are disabled in the public demo. You can still save a temporary symptom entry without a photo.
+              </div>
+            ) : (
+              <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-pine/30 bg-mist/45 px-3 py-2 text-sm font-semibold text-pine transition hover:border-pine/50 hover:bg-mist">
+                <Upload className="h-4 w-4" aria-hidden="true" />
+                {photoFiles.length > 0 ? "Choose different photos" : "Attach photos"}
+                <input
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                  className="sr-only"
+                  disabled={saving}
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? []);
+                    event.target.value = "";
+                    chooseSymptomPhotos(files);
+                  }}
+                />
+              </label>
+            )}
             {photoFiles.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {photoFiles.map((file) => (
@@ -5718,7 +5821,7 @@ function LongevityView({
   );
 }
 
-function RecentView({ data }: { data: PetMemoryData }) {
+function RecentView({ data, demoMode = false }: { data: PetMemoryData; demoMode?: boolean }) {
   const [range, setRange] = useState<TimeRange>(30);
   const [summary, setSummary] = useState<SummaryResponse>(() => makeLocalSummary(data, 30));
   const [allowAi, setAllowAi] = useState(false);
@@ -5732,6 +5835,11 @@ function RecentView({ data }: { data: PetMemoryData }) {
   }, [data, range]);
 
   const refreshSummary = async () => {
+    if (demoMode) {
+      setSummary(makeLocalSummary(data, range));
+      setSummaryNotice("Demo summaries are generated locally. No data was sent to an AI provider.");
+      return;
+    }
     setLoading(true);
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -5798,20 +5906,32 @@ function RecentView({ data }: { data: PetMemoryData }) {
             </div>
             <ActionButton icon={Sparkles} label={loading ? "Summarizing" : "Refresh"} onClick={refreshSummary} variant="secondary" />
           </div>
-          <label className="mt-4 flex items-start gap-3 rounded-lg border border-ink/10 bg-white/65 p-3 text-sm text-ink">
-            <input
-              type="checkbox"
-              checked={allowAi}
-              onChange={(event) => setAllowAi(event.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-ink/20 accent-pine"
-            />
-            <span>
-              <span className="block font-semibold">Use AI summary when signed in</span>
-              <span className="mt-1 block text-xs leading-5 text-muted">
-                Not medical advice. Sends a minimized recent-care summary to the AI provider only after you check this box.
+          {demoMode ? (
+            <div className="mt-4 flex items-start gap-3 rounded-lg border border-clinical/15 bg-skywash p-3 text-sm text-ink">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-clinical" aria-hidden="true" />
+              <span>
+                <span className="block font-semibold">Local demo summary</span>
+                <span className="mt-1 block text-xs leading-5 text-muted">
+                  Nothing is sent to an AI provider in demo mode. These observations are not medical advice.
+                </span>
               </span>
-            </span>
-          </label>
+            </div>
+          ) : (
+            <label className="mt-4 flex items-start gap-3 rounded-lg border border-ink/10 bg-white/65 p-3 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={allowAi}
+                onChange={(event) => setAllowAi(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-ink/20 accent-pine"
+              />
+              <span>
+                <span className="block font-semibold">Use AI summary when signed in</span>
+                <span className="mt-1 block text-xs leading-5 text-muted">
+                  Not medical advice. Sends a minimized recent-care summary to the AI provider only after you check this box.
+                </span>
+              </span>
+            </label>
+          )}
           {summaryNotice && <p className="mt-3 rounded-lg bg-oat px-3 py-2 text-xs font-medium text-muted">{summaryNotice}</p>}
           <p className="mt-3 whitespace-pre-line text-sm leading-6 text-ink">{summary.summary}</p>
           <div className="mt-4 border-t border-pine/20 pt-4">
@@ -6260,12 +6380,14 @@ function DocumentsView({
   commit,
   registerUndo,
   userId,
+  demoMode = false,
   showNotice
 }: {
   data: PetMemoryData;
   commit: CommitPetMemory;
   registerUndo: RegisterUndo;
   userId?: string;
+  demoMode?: boolean;
   showNotice: (message: string, tone?: AppNotice["tone"]) => void;
 }) {
   const [uploading, setUploading] = useState(false);
@@ -6276,6 +6398,10 @@ function DocumentsView({
 
   const addDocuments = async (files: File[]) => {
     if (!files.length) return;
+    if (demoMode) {
+      showNotice("Uploads are disabled in the temporary demo.");
+      return;
+    }
     if (files.length > 10) {
       showNotice("Attach up to 10 files at a time.", "error");
       return;
@@ -6372,7 +6498,7 @@ function DocumentsView({
               <span>PDF or image · 10 MB max</span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          {!demoMode && <div className="flex flex-wrap gap-2">
             <label className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-pine bg-pine px-3 py-2 text-sm font-semibold text-white shadow-soft transition ${uploading ? "cursor-wait opacity-65" : "cursor-pointer hover:bg-ink"}`}>
               <Upload className="h-4 w-4" aria-hidden="true" />
               {uploading ? "Saving files" : "Attach files"}
@@ -6405,13 +6531,15 @@ function DocumentsView({
                 }}
               />
             </label>
-          </div>
+          </div>}
         </div>
 
         <div className="mt-5 rounded-lg border border-pine/15 bg-mist/55 p-4 text-sm leading-6 text-muted">
-          <p className="font-semibold text-ink">{userId ? "Private account storage" : "Local-only file storage"}</p>
+          <p className="font-semibold text-ink">{demoMode ? "Safe sample documents" : userId ? "Private account storage" : "Local-only file storage"}</p>
           <p className="mt-1">
-            {userId
+            {demoMode
+              ? "Uploads are disabled here, and the listed records are sample placeholders. Nothing is stored or synced while you explore the demo."
+              : userId
               ? "Files are stored privately under your account. Only the signed-in owner can open or download them."
               : "Files stay in this browser and are not included in JSON exports. Sign-in storage is needed to see them on another device."}
           </p>
